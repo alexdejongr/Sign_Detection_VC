@@ -1,4 +1,4 @@
-im = imread("imatges_senyals/limit/road818.png");
+im = imread("limit/002_0001.png");
 figure,imshow(im)
 
 im_hsv = rgb2hsv(im);
