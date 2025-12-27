@@ -2,16 +2,23 @@ ruta_dataset = './';
 imds = imageDatastore(ruta_dataset, ...
     'IncludeSubfolders', true, ...
     'LabelSource', 'foldernames');
+
 % Inicialitzem variables
 numImages = numel(imds.Files);
 Features = zeros(numImages, 1766);
 Labels = cell(numImages, 1);
 
-disp(['S''han trobat ', num2str(numImages), ' imatges. Processant...']);
-reset(imds); 
+% --- NOU: Obrim el fitxer de text per escriure els errors ---
+nom_fitxer_errors = 'errores_identificacion.txt';
+fid = fopen(nom_fitxer_errors, 'w');
+fprintf(fid, 'Carpeta\tNom_Imatge\n'); % Escrivim la capçalera
+fprintf(fid, '-----------------------------------\n');
 
+disp(['S''han trobat ', num2str(numImages), ' imatges. Processant...']);
+
+reset(imds); 
 for i = 1:numImages
-    %  Llegim imatge i info 
+    % Llegim imatge i info 
     [im, info] = read(imds);
     im = im2uint8(im);
     
@@ -21,14 +28,22 @@ for i = 1:numImages
     % Segmentació
     im_masked = segmentar(im);
     
-    % Extracció característiques
+    % Extracció característiques per comprovar si està buida
     im_gray = rgb2gray(im_masked);
     bw = imbinarize(im_gray, 0.01); 
     
-    % Si la segmentació falla (tot negre), posem zeros per no trencar el codi
+    % Si la segmentació falla (tot negre)
     if ~any(bw(:))
+        % --- NOU: Guardem el nom al TXT ---
+        [~, nom_arxiu, ext] = fileparts(info.Filename); % Separem nom de la ruta
+        nom_complet = [nom_arxiu, ext];
+        nom_carpeta = char(info.Label);
+        
+        fprintf(fid, '%s\t%s\n', nom_carpeta, nom_complet);
+        disp(['Avís: Error a ', nom_carpeta, '/', nom_complet]);
+        
+        % Posem zeros per no trencar el codi i passem a la següent
         Features(i, :) = zeros(1, 1766);
-        disp('Avís: Imatge buida o no detectada.');
         continue; 
     end
     
@@ -43,38 +58,52 @@ for i = 1:numImages
     % HOG sobre el retall
     rect = blob.BoundingBox;
     im_crop = imcrop(im_masked, rect);
+    
+    % Redimensionem a 64x64 (Important per mantenir vector fix)
     im_resized = imresize(im_crop, [64, 64]);
     
-    
+    % Extracció HOG (Vector de 1764 + 2 geo = 1766)
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
     % Guardem a la matriu general
     Features(i, :) = [compacitat, solidesa, hog_vector];
 end
 
+% --- NOU: Tanquem el fitxer de text ---
+fclose(fid);
+disp(['Llistat d''errors guardat a: ', nom_fitxer_errors]);
+
+% Neteja final de la taula
+filas_cero = all(Features == 0, 2);
+total_ceros = sum(filas_cero);
+disp(['S''han eliminat ', num2str(total_ceros), ' imatges que han fallat.']);
+
+idx_brossa = all(Features == 0, 2);
+Features(idx_brossa, :) = [];
+Labels(idx_brossa) = [];
+
+% Creació de la Taula Final
 TaulaFinal = array2table(Features);
-% Renombrem només les dues primeres variables que sabem quines són
 TaulaFinal.Properties.VariableNames{1} = 'Compacitat';
 TaulaFinal.Properties.VariableNames{2} = 'Solidesa';
 TaulaFinal.Clase = string(Labels);
-disp('Procés finalitzat.');
-disp(['Total mostres: ', num2str(height(TaulaFinal))]);
+TaulaFinal{:, 1:end-1} = normalize(TaulaFinal{:, 1:end-1});
+disp('Procés finalitzat. TaulaFinal creada.');
+disp(['Total mostres vàlides: ', num2str(height(TaulaFinal))]);
 
+
+% --- FUNCIÓ DE SEGMENTACIÓ (La teva original) ---
 function im_masked = segmentar(im)
-    
     im_hsv = rgb2hsv(im);
     H = im_hsv(:,:,1);
     S = im_hsv(:,:,2);
     V = im_hsv(:,:,3);
     
-    
     mask_red = ((H > 0.92) | (H < 0.08)) & (S > 0.3) & (V > 0.2);
-    
     mask_blue = (H > 0.58) & (H < 0.75) & (S > 0.6) & (V > 0.25);
-    
     mask_yellow = (H > 0.12) & (H < 0.28) & (S > 0.25) & (V > 0.3);
-    % unio mascares
     
+    % unio mascares
     bw_raw = mask_red | mask_blue | mask_yellow;
     
     % morfologia neteja
@@ -85,11 +114,11 @@ function im_masked = segmentar(im)
     
     se_gran = strel('disk', 4);
     bw_final = imclose(bw_open, se_gran);
+    
     % Neteja inicial de soroll molt petit 
     bw_final = bwareafilt(bw_final, [300, 999999]); 
     
-    
-    %analitzem propietats geometrices
+    % analitzem propietats geometrices
     stats = regionprops(bw_final, 'BoundingBox', 'Area', 'PixelIdxList');
     
     % Creem una imatge negra buida per anar posant els "bons" candidats
@@ -105,8 +134,6 @@ function im_masked = segmentar(im)
         % criteri forma
         es_proporcionat = (aspect_ratio > 0.5) && (aspect_ratio < 1.8);
         
-       
-        
         if es_proporcionat
             % Si compleix la forma, l'afegim a la mascara bona
             bw_filtrada(stats(k).PixelIdxList) = true;
@@ -114,7 +141,6 @@ function im_masked = segmentar(im)
     end
     
     % entre els que tenen forma de senyal, agafem el mes gran
-    
     if any(bw_filtrada(:))
         bw_final = bwareafilt(bw_filtrada, 1);
     else
@@ -122,40 +148,10 @@ function im_masked = segmentar(im)
         bw_final = bwareafilt(bw_final, 1);
     end
     
-    %nomes ensenya el que hem seleccionat com a mascara i tot lu altre negre
+    % només ensenya el que hem seleccionat com a mascara
     im_masked = im;
     R = im(:,:,1); R(~bw_final) = 0;
     G = im(:,:,2); G(~bw_final) = 0;
     B = im(:,:,3); B(~bw_final) = 0;
     im_masked = cat(3, R, G, B);
-    
 end
-
-% netejar la taula final borrant totes les imatges que no ha pogut
-% segmentar
-
-filas_cero = all(Features == 0, 2);
-
-total_ceros = sum(filas_cero);
-
-disp(['hi ha ', num2str(total_ceros), 'files 0']);
-
-idx_brossa = all(Features == 0, 2);
-
-Features(idx_brossa, :) = [];
-
-Labels(idx_brossa) = [];
-
-
-
-filas_cero = all(Features == 0, 2);
-
-total_ceros = sum(filas_cero);
-
-disp(['hi ha ', num2str(total_ceros), 'files 0']);
-
-TaulaFinal = array2table(Features);
-TaulaFinal.Properties.VariableNames{1} = 'Compacitat';
-TaulaFinal.Properties.VariableNames{2} = 'Solidesa';
-TaulaFinal.Clase = string(Labels);
-

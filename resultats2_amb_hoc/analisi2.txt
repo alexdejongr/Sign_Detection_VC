@@ -1,0 +1,57 @@
+INFORME FINAL: ANÀLISI DEL MODEL GUANYADOR (4.25 ENSEMBLE)
+DATA: 27/12/2025
+
+1. EVOLUCIÓ DE LES DADES: QUÈ HEM AFEGIT?
+------------------------------------------------------------
+Per entendre per què aquest model funciona, primer hem d'explicar el canvi radical en les dades d'entrenament:
+
+- L'enfocament antic (forma):
+  Inicialment, el nostre sistema només "veia" la forma. Utilitzàvem descriptors com HOG (Histogram of Oriented Gradients), compacitat i solidesa.
+  Problema: el model no podia distingir bé entre senyals que tenen la mateixa forma però signifiquen coses diferents segons el color (ex: un senyal de prohibició vermell vs. un senyal de fi de límit gris).
+
+- La nova incorporació (color):
+  Hem afegit l'Histogram of Color (HOC). Això permet al model analitzar la distribució cromàtica (quant de vermell, blau o blanc té cada imatge).
+  Conseqüència: això va disparar el nombre de variables fins a 1769, afegint complexitat però també la informació necessària que ens faltava.
+
+2. EL MODEL GUANYADOR: 4.25 ENSEMBLE (SUBSPACE KNN)
+------------------------------------------------------------
+El model 4.25 ha estat la solució per gestionar aquesta nova complexitat sense perdre's.
+
+- Arquitectura: ensemble de Subspace KNN (veïns més propers en subespais).
+  En lloc de tenir un sol "cervell" mirant totes les dades, aquest model actua com un comitè. Crea múltiples classificadors petits, i cadascun mira només un subgrup aleatori de les característiques. Després, voten la resposta final.
+
+- Tècnica clau: PCA (Anàlisi de Components Principals).
+  De les 1769 característiques inicials (amb molt soroll), el model ha activat el PCA per quedar-se només amb les 203 més importants. Això ha eliminat la redundància i ha netejat el senyal.
+
+3. RENDIMENT TÈCNIC I VELOCITAT
+------------------------------------------------------------
+- Precisió (accuracy): 98,6 % en validació.
+  És un resultat excepcional, amb només un 1,4 % d'error global.
+
+- Velocitat de predicció: ~550 observacions/segon.
+  Tot i ser un model complex (ensemble), és prou ràpid per processar vídeo en temps real si fos necessari.
+
+- Mida: ~100 MB.
+  Una mida raonable per a un sistema d'escriptori o servidor.
+
+4. ANÀLISI VISUAL DELS RESULTATS
+------------------------------------------------------------
+A. Matriu de confusió (on falla?):
+   La matriu és extremadament neta, però revela petits punts de millora:
+   - El senyal "STOP" és el més difícil. El model n'ha confós 4 amb "límit" i 5 amb "vianant". Això passa perquè la forma octogonal del STOP, si es veu de lluny o borrosa, es pot confondre geomètricament amb el cercle d'un límit de velocitat.
+   - La resta de classes tenen errors gairebé inexistents.
+
+B. Corbes ROC (capacitat de distinció):
+   Les corbes són gairebé perfectes (angles rectes a la cantonada superior esquerra).
+   - L'àrea sota la corba (AUC) és de 1,00 o 0,99 per a gairebé totes les classes.
+   - L'única excepció lleu és el "STOP" (AUC 0,93), confirmant que és la classe més delicada, però amb un rendiment encara molt alt.
+
+C. Coordenades paral·leles (resum):
+   A diferència del model anterior (3.11), que tenia una dispersió caòtica en la variable "compacitat", aquest model ensemble ha estabilitzat les línies. Gràcies al mètode de subespais, el model ja no depèn només del color vermell, sinó que ha après a ponderar correctament la forma i el color per separat, eliminant l'overfitting que s'observava anteriorment.
+
+CONCLUSIÓ
+------------------------------------------------------------
+La combinació de descriptors de forma (HOG) i descriptors de color (HOC), processada mitjançant un ensemble amb PCA, ens ha proporcionat l'equilibri perfecte. Disposem d'un model robust (98,6 %) que entén tant la geometria com la cromàtica dels senyals de trànsit.
+
+
+Per revisar que no hi hagi overfitting , es va rentrenar el model i validar % , es va obtenir 95,9 % en validación hold-out del 50 %.

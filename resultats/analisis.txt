@@ -1,0 +1,103 @@
+INFORME TÈCNIC: ESTAT ACTUAL DEL PROJECTE (TSR)
+Data: 27/12/2025
+Fitxer analitzat: Script de generació de Dataset (Matlab) i Resultats Classification Learner
+
+-------------------------------------------------------------------------
+1. RESUM DEL FLUX DE TREBALL (PIPELINE)
+-------------------------------------------------------------------------
+El codi actual implementa un sistema seqüencial de Visió per Computador clàssica 
+per generar una taula de dades ('TaulaFinal') a partir d'imatges en brut.
+
+El flux és el següent:
+1. Lectura automàtica de carpetes i etiquetes (ImageDatastore).
+2. Segmentació per color (HSV Estricte).
+3. Filtratge geomètric (eliminació de soroll).
+4. Extracció de descriptors (HOG + Geometria).
+5. Registre d'errors en fitxer de text.
+6. Normalització estadística i entrenament.
+
+-------------------------------------------------------------------------
+2. DETALLS DE LA SEGMENTACIÓ (Funció 'segmentar')
+-------------------------------------------------------------------------
+La funció actual utilitza una estratègia de "Llindars Estrictes" sense 
+recuperació (encara no inclou CLAHE en aquesta versió del codi).
+
+- Espai de Color: HSV (Hue, Saturation, Value).
+- Màscares definides:
+  * Vermell: H(>0.92 o <0.08), S>0.3, V>0.2
+  * Blau: H(0.58-0.75), S>0.6, V>0.25 (Molt restrictiu amb la saturació)
+  * Groc: H(0.12-0.28), S>0.25, V>0.3
+- Processament morfològic:
+  1. Imfill 'holes': Omplir forats dins els senyals.
+  2. Imopen (disk 2): Eliminar soroll petit (punts blancs).
+  3. Imclose (disk 4): Unir components trencats.
+- Filtratge Geomètric:
+  * Àrea mínima: 300 píxels.
+  * Relació d'Aspecte (Amplada/Alçada): Ha d'estar entre 0.5 i 1.8.
+  * Selecció: Es queda només amb l'objecte més gran de la imatge.
+
+-------------------------------------------------------------------------
+3. VECTOR DE CARACTERÍSTIQUES (Features)
+-------------------------------------------------------------------------
+Cada imatge vàlida es converteix en un vector numèric de 1766 dimensions.
+Aquesta és la informació que rebrà el classificador (KNN/SVM).
+
+A) Geometria (2 variables):
+   - Compacitat: (Perímetre^2 / Àrea). Utilitat: Distingir Cercles vs Triangles.
+   - Solidesa: (Àrea / Àrea Convexa). Utilitat: Detectar formes irregulars.
+
+B) HOG (Histogram of Oriented Gradients) (1764 variables):
+   - Configuració: CellSize [8 8].
+   - Imatge redimensionada: 64x64 píxels.
+   - Utilitat: Captura la silueta interna (fletxes, números, pictogrames) 
+     ignorant la il·luminació global.
+
+-------------------------------------------------------------------------
+4. MILLORES TÈCNIQUES IMPLEMENTADES
+-------------------------------------------------------------------------
+Aquest script inclou dues solucions crítiques als problemes anteriors:
+
+A) Sistema de Registre d'Errors (.txt):
+   - El codi detecta si la segmentació falla (imatge totalment negra).
+   - Genera automàticament el fitxer 'errores_identificacion.txt'.
+   - Això permet identificar quines imatges necessiten el mode "Rescat" (CLAHE).
+
+B) Normalització Estadística (Z-Score):
+   - Línia clau: `TaulaFinal{:, 1:end-1} = normalize(...)`
+   - Problema solucionat: El PCA fallava (es quedava amb 1 component) perquè 
+     la 'Compacitat' tenia valors molt més grans que el HOG.
+   - Solució: Ara totes les columnes tenen mitjana 0 i desviació 1.
+
+-------------------------------------------------------------------------
+5. RESULTATS OBTINGUTS (VALIDACIÓ EMPÍRICA)
+-------------------------------------------------------------------------
+S'ha realitzat un entrenament amb 'Classification Learner' utilitzant 
+5-fold Cross Validation. S'han comparat dos escenaris clau:
+
+ESCENARI A: Sense Reducció de Dimensionalitat (Model 4.4)
+- Algorisme: Weighted KNN.
+- Precisió (Accuracy): 98.8%
+- Velocitat de predicció: ~370 obs/seg.
+- Característiques usades: 1766 (Totes).
+- Anàlisi: Precisió gairebé perfecta, però lent i amb risc d'Overfitting 
+  (memorització de soroll) a causa de l'alta dimensionalitat.
+
+ESCENARI B: Amb PCA al 95% de Variància (Model 2.4)
+- Algorisme: Weighted KNN (Estandaritzat).
+- Precisió (Accuracy): 96.6%
+- Velocitat de predicció: ~1600 obs/seg.
+- Característiques usades: ~202 components principals (reduït de 1766).
+- Anàlisi: Aquest és el model òptim.
+  1. La normalització ha permès que el PCA funcioni correctament (passant d'1 component a 202).
+  2. És 4 vegades més ràpid que l'Escenari A.
+  3. La pèrdua de precisió és mínima (2.2%), la qual cosa indica que el model 
+     s'està centrant en la forma real i no en detalls irrellevants.
+
+
+Per assegurar que els resultats del model són fiables i no fruit de la "sort" en triar les imatges d'entrenament, hem utilitzat la tècnica de Validació Creuada amb 5 particions (5-Fold Cross Validation).
+
+CONCLUSIONS FINALS:
+El sistema actual és robust i ràpid. La diferència del 2.2% entre els dos models 
+suggereix que falta informació de color per acabar de distingir senyals amb formes 
+idèntiques. El següent pas serà afegir descriptors de color (HOC) per recuperar 
+aquest percentatge mantenint l'eficiència del PCA, i intentar millorar la segmentacio ( encara hi han 250 aprox imatges que no es segmenten be)
