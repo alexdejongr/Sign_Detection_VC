@@ -1,3 +1,5 @@
+clear; clc; close all;
+
 ruta_dataset = './'; 
 imds = imageDatastore(ruta_dataset, ...
     'IncludeSubfolders', true, ...
@@ -6,15 +8,15 @@ imds = imageDatastore(ruta_dataset, ...
 % Inicialitzem variables
 numImages = numel(imds.Files);
 
-%%%%%%%%%afegim a les carectistiques el HOC
-
+% --- TOTAL FEATURES: 1769 ---
+% 2 (Forma) + 3 (Color HOC) + 1764 (HOG)
 Features = zeros(numImages, 1769);
 Labels = cell(numImages, 1);
 
 % Obrim el fitxer de text per escriure els errors
 nom_fitxer_errors = 'errores_identificacion.txt';
 fid = fopen(nom_fitxer_errors, 'w');
-fprintf(fid, 'Carpeta\tNom_Imatge\n'); % Escrivim la capçalera
+fprintf(fid, 'Carpeta\tNom_Imatge\n'); 
 fprintf(fid, '-----------------------------------\n');
 
 disp(['S''han trobat ', num2str(numImages), ' imatges. Processant...']);
@@ -28,29 +30,28 @@ for i = 1:numImages
     % Guardem l'etiqueta 
     Labels{i} = info.Label;
     
-    % Segmentació
+    % --- 1. SEGMENTACIÓ ROBUSTA (Nova Funció Sandwich) ---
     im_masked = segmentar(im);
     
-    % Extracció característiques per comprovar si està buida
+    % Comprovar si està buida
     im_gray = rgb2gray(im_masked);
     bw = imbinarize(im_gray, 0.01); 
     
     % Si la segmentació falla (tot negre)
     if ~any(bw(:))
-        % Guardem el nom al TXT
         [~, nom_arxiu, ext] = fileparts(info.Filename);
         nom_complet = [nom_arxiu, ext];
         nom_carpeta = char(info.Label);
         
         fprintf(fid, '%s\t%s\n', nom_carpeta, nom_complet);
-        disp(['Avís: Error a ', nom_carpeta, '/', nom_complet]);
+        % disp(['Avís: Error a ', nom_carpeta, '/', nom_complet]);
         
-        % --- CANVI 2: Posem zeros amb la nova mida (1769) ---
+        % Posem zeros
         Features(i, :) = zeros(1, 1769);
         continue; 
     end
     
-    % RegionProps
+    % --- 2. EXTRACTOR DE FORMA (COMPACITAT/SOLIDESA) ---
     stats = regionprops(bw, 'Area', 'Perimeter', 'Solidity', 'BoundingBox');
     [~, idx] = max([stats.Area]); % Objecte més gran
     blob = stats(idx);
@@ -58,21 +59,18 @@ for i = 1:numImages
     compacitat = (blob.Perimeter ^ 2) / blob.Area;
     solidesa = blob.Solidity;
     
-    % HOG sobre el retall
+    % Retall per a Color i HOG
     rect = blob.BoundingBox;
     im_crop = imcrop(im_masked, rect);
     
-    % --- CANVI 3: EXTRACCIÓ DE COLOR (HOC) ---
-    % Analitzem el color del retall per saber si és vermell, blau o groc
+    % --- 3. EXTRACTOR DE COLOR (HOC) ---
     im_hsv_crop = rgb2hsv(im_crop);
     H_c = im_hsv_crop(:,:,1);
     S_c = im_hsv_crop(:,:,2);
     
-    % Màscara vàlida (ignorem el fons negre del crop)
-    mask_valid = max(im_crop, [], 3) > 0;
-    total_pixels = sum(mask_valid(:)) + 1; % +1 per evitar divisió per 0
+    mask_valid = max(im_crop, [], 3) > 0; % Ignorem el fons negre
+    total_pixels = sum(mask_valid(:)) + 1;
     
-    % Comptem píxels de cada color
     p_red = sum(mask_valid(:) & ((H_c(:)>0.85)|(H_c(:)<0.15)) & (S_c(:)>0.25));
     p_blue = sum(mask_valid(:) & (H_c(:)>0.50)&(H_c(:)<0.75) & (S_c(:)>0.25));
     p_yellow = sum(mask_valid(:) & (H_c(:)>0.12)&(H_c(:)<0.20) & (S_c(:)>0.25));
@@ -81,20 +79,16 @@ for i = 1:numImages
     pct_blue = p_blue / total_pixels;
     pct_yellow = p_yellow / total_pixels;
     
-    % Redimensionem a 64x64 (Important per mantenir vector fix)
+    % --- 4. EXTRACTOR DE TEXTURA (HOG) ---
     im_resized = imresize(im_crop, [64, 64]);
-    
-    % Extracció HOG (Vector de 1764)
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
-    % --- CANVI 4: Guardem TOT a la matriu general ---
-    % [Compacitat, Solidesa, %Vermell, %Blau, %Groc, Vector HOG]
+    % Guardem tot junt (1769 variables)
     Features(i, :) = [compacitat, solidesa, pct_red, pct_blue, pct_yellow, hog_vector];
 end
 
-% Tanquem el fitxer de text
+% Tanquem fitxer errors
 fclose(fid);
-disp(['Llistat d''errors guardat a: ', nom_fitxer_errors]);
 
 % Neteja final de la taula
 filas_cero = all(Features == 0, 2);
@@ -108,7 +102,7 @@ Labels(idx_brossa) = [];
 % Creació de la Taula Final
 TaulaFinal = array2table(Features);
 
-% --- CANVI 5: Noms de les columnes actualitzats ---
+% Noms de columnes clau
 TaulaFinal.Properties.VariableNames{1} = 'Compacitat';
 TaulaFinal.Properties.VariableNames{2} = 'Solidesa';
 TaulaFinal.Properties.VariableNames{3} = 'Pct_Red';
@@ -117,69 +111,74 @@ TaulaFinal.Properties.VariableNames{5} = 'Pct_Yellow';
 
 TaulaFinal.Clase = string(Labels);
 
-% Normalització (Important per al PCA)
+% Normalització
 TaulaFinal{:, 1:end-1} = normalize(TaulaFinal{:, 1:end-1});
 
 disp('Procés finalitzat. TaulaFinal creada.');
-disp(['Total mostres vàlides: ', num2str(height(TaulaFinal))]);
+% Usem size(..., 1) per evitar conflictes amb la variable 'height'
+disp(['Total mostres vàlides: ', num2str(size(TaulaFinal, 1))]);
 
 
 function im_masked = segmentar(im)
+    % 1. Convertim a HSV
     im_hsv = rgb2hsv(im);
     H = im_hsv(:,:,1);
     S = im_hsv(:,:,2);
     V = im_hsv(:,:,3);
     
-    mask_red = ((H > 0.92) | (H < 0.08)) & (S > 0.3) & (V > 0.2);
-    mask_blue = (H > 0.58) & (H < 0.75) & (S > 0.6) & (V > 0.25);
-    mask_yellow = (H > 0.12) & (H < 0.28) & (S > 0.25) & (V > 0.3);
+    % Vermell tolerant
+    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
+    % Blau tolerant
+    mask_blue = (H > 0.55) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+    % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
+    mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
     
-    % unio mascares
     bw_raw = mask_red | mask_blue | mask_yellow;
     
-    % morfologia neteja
-    bw_filled = imfill(bw_raw, 'holes');
+    % Pas A: DILATAR (Connectar)
+    se_connect = strel('disk', 3); 
+    bw_connected = imdilate(bw_raw, se_connect);
     
-    ee = strel('disk', 2);
-    bw_open = imopen(bw_filled, ee);
+    % Pas B: OMPLIR (Sòlid)
+    bw_filled = imfill(bw_connected, 'holes');
     
-    se_gran = strel('disk', 4);
-    bw_final = imclose(bw_open, se_gran);
+    % Pas C: ERODIR (Recuperar mida original)
+    bw_shrunk = imerode(bw_filled, se_connect);
     
-    % Neteja inicial de soroll molt petit 
-    bw_final = bwareafilt(bw_final, [300, 999999]); 
+    % Pas D: NETEJA FINAL
+    se_clean = strel('disk', 2);
+    bw_clean = imopen(bw_shrunk, se_clean);
     
-    % analitzem propietats geometrices
-    stats = regionprops(bw_final, 'BoundingBox', 'Area', 'PixelIdxList');
+    % 4. FILTRATGE
+    bw_final = bwareafilt(bw_clean, [150, 999999]); 
     
-    % Creem una imatge negra buida per anar posant els "bons" candidats
+    % 5. FORMA I RESCAT
+    stats = regionprops(bw_final, 'BoundingBox', 'PixelIdxList', 'Extent');
     bw_filtrada = false(size(bw_final));
+    found_candidate = false;
     
     for k = 1:length(stats)
         caixa = stats(k).BoundingBox;  
-        width = caixa(3);
-        height = caixa(4);
+        w_box = caixa(3); % Canviat nom per evitar conflictes
+        h_box = caixa(4); % Canviat nom per evitar conflictes
+        aspect_ratio = w_box / h_box;
         
-        aspect_ratio = width / height;
+        es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);
+        te_consistencia = stats(k).Extent > 0.25; 
         
-        % criteri forma
-        es_proporcionat = (aspect_ratio > 0.5) && (aspect_ratio < 1.8);
-        
-        if es_proporcionat
-            % Si compleix la forma, l'afegim a la mascara bona
+        if es_proporcionat && te_consistencia
             bw_filtrada(stats(k).PixelIdxList) = true;
+            found_candidate = true;
         end
     end
     
-    % entre els que tenen forma de senyal, agafem el mes gran
-    if any(bw_filtrada(:))
+    if found_candidate
         bw_final = bwareafilt(bw_filtrada, 1);
-    else
-        % per no retornar una imatge negra, tornem el pla gran
+    elseif any(bw_final(:))
+        % Fail-safe: Si falla la forma, rescatem la taca de color més gran
         bw_final = bwareafilt(bw_final, 1);
     end
-    
-    % només ensenya el que hem seleccionat com a mascara
+
     im_masked = im;
     R = im(:,:,1); R(~bw_final) = 0;
     G = im(:,:,2); G(~bw_final) = 0;
