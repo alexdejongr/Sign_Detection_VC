@@ -1,82 +1,76 @@
-im = imread("vianant\035_1_0006.png"); % Assegura't que la ruta és correcta
-figure, imshow(im); title('Original');
 
+
+% --- 1. CARREGAR IMATGE ---
+[arxiu, ruta] = uigetfile({'*.*'}, 'Selecciona la imatge del senyal 80');
+if isequal(arxiu,0), return; end
+im = imread(fullfile(ruta, arxiu));
+
+figure('Name', 'Analisi Final', 'Color', 'w');
+subplot(2,3,1); imshow(im); title('Imatge Original');
+
+% --- 2. FILTRES FÍSICS (MATH) ---
+im_double = im2double(im); 
+R = im_double(:,:,1);
+G = im_double(:,:,2);
+B = im_double(:,:,3);
+
+% A) FILTRE BLAU ESTRICTE (Obligatori)
+% El cel sol tenir saturació baixa. El senyal té saturació alta.
+contrast_blau = max(0, B - R); 
+
+% B) NOUS FILTRES VERMELLS (Anti-Núvols)
+% En lloc de sumar G, el restem. Això mata el blanc i el gris del cel.
+% Senyal Vermell = R alt, G baix.
+contrast_vermell_pur = max(0, R - G); 
+
+% C) FILTRE GROC (Per si de cas)
+% El groc sí que necessita R i G alts.
+contrast_groc = max(0, (R + G) - B); 
+
+subplot(2,3,4); imshow(contrast_blau, [0 0.5]); title('Contrast Blau (B-R)');
+subplot(2,3,5); imshow(contrast_vermell_pur, [0 0.3]); title('Contrast Vermell (R-G)');
+
+% --- 3. SEGMENTACIÓ HSV ESTRICTA ---
 im_hsv = rgb2hsv(im);
 H = im_hsv(:,:,1);
 S = im_hsv(:,:,2);
 V = im_hsv(:,:,3);
 
-% --- CANVI 1: LLINDARS MÉS TOLERANTS ---
-% Ampliem el rang de Hue (0.92->0.90 i 0.08->0.12)
-% Baixem drasticament la Saturació (0.3->0.15) i el Valor (0.2->0.15)
-mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
+% -> MÀSCARA VERMELLA (R - G és la clau aquí)
+% El to vermell (H) és important, però el contrast R-G mana.
+mask_red_hsv = ((H > 0.90) | (H < 0.12)) & (S > 0.15); 
+mask_red = mask_red_hsv & (contrast_vermell_pur > 0.05); % 0.05 és suficient si restem G
 
-% També baixem una mica els blaus per si de cas
-mask_blue = (H > 0.55) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+% -> MÀSCARA GROGA (Obres)
+mask_yellow_hsv = (H > 0.11) & (H < 0.18) & (S > 0.20);
+mask_yellow = mask_yellow_hsv & (contrast_groc > 0.10); 
 
-mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
-% unio mascares
-bw_raw = mask_red | mask_blue | mask_yellow;
+% -> MÀSCARA BLAVA (Obligatori) - ELIMINAR CEL
+% AQUI ESTÀ EL TRUC DEL CEL: 
+% Si és cel, la Saturació (S) sol ser baixa (< 0.3). La pintura és > 0.3.
+% Pugem la S mínima per al blau a 0.35.
+mask_blue_hsv = (H > 0.55) & (H < 0.75) & (S > 0.35); 
+mask_blue = mask_blue_hsv & (contrast_blau > 0.10);
 
-% --- CANVI 2: ESTRATÈGIA DE CONNEXIÓ ---
-% El problema és que amb poca llum el cercle es trenca.
-% NO facis imopen primer (això esborra els trossets). 
-% Fes imdilate primer per "enganxar" els trossos.
+% UNIÓ
+bw_raw = mask_red | mask_yellow | mask_blue;
 
-se_connect = strel('disk', 3); 
+% --- 4. MORFOLOGIA (Neteja) ---
+se_connect = strel('disk', 2); % Reduït a 2 per no ajuntar arbres amb el senyal
 bw_connected = imdilate(bw_raw, se_connect);
-
-% Ara omplim forats
 bw_filled = imfill(bw_connected, 'holes');
 bw_shrunk = imerode(bw_filled, se_connect);
+bw_clean = imopen(bw_shrunk, strel('disk', 3)); % Neteja forta de branques
 
-% Ara sí, netegem el soroll exterior (Erosió suau)
-se_clean = strel('disk', 2);
-bw_clean = imopen(bw_shrunk, se_clean);
+% Filtre final per mida
+bw_final_cand = bwareafilt(bw_clean, [150, 999999]); 
 
-% Neteja per mida (Baixem el mínim a 150 per seguretat)
-bw_final = bwareafilt(bw_clean, [150, 999999]); 
-
-% --- CANVI 3: FILTRE DE FORMA MÉS RELAXAT ---
-stats = regionprops(bw_final, 'BoundingBox', 'Area', 'PixelIdxList', 'Extent');
-bw_filtrada = false(size(bw_final));
-
-found = false;
-for k = 1:length(stats)
-    caixa = stats(k).BoundingBox;  
-    width = caixa(3);
-    height = caixa(4);
-    aspect_ratio = width / height;
-    
-    % Ampliem el rang d'aspect ratio (per senyals vistos de costat)
-    es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);
-    
-    % Extent: Un senyal sòlid (cercle/quadrat) ocupa bastant de la seva caixa
-    te_consistencia = stats(k).Extent > 0.25; 
-
-    if es_proporcionat && te_consistencia
-        bw_filtrada(stats(k).PixelIdxList) = true;
-        found = true;
-    end
-end
-
-% "Fail-safe": Si després de filtrar no queda res, però teníem detecció inicial,
-% agafem la taca més gran (millor això que una imatge negra)
-if ~found && any(bw_final(:))
-    disp('AVÍS: Forma dubtosa, però recuperant el blob més gran per no perdre la imatge.');
-    bw_final = bwareafilt(bw_final, 1);
-elseif found
-    bw_final = bw_filtrada;
-else
-    % Si realment no hi havia res des del principi
-    bw_final = bwareafilt(bw_final, 1); 
-end
-
-% Visualització final
+% --- 5. VISUALITZACIÓ ---
 im_masked = im;
-R = im(:,:,1); R(~bw_final) = 0;
-G = im(:,:,2); G(~bw_final) = 0;
-B = im(:,:,3); B(~bw_final) = 0;
-im_masked = cat(3, R, G, B);
+R_out = im(:,:,1); R_out(~bw_final_cand) = 0;
+G_out = im(:,:,2); G_out(~bw_final_cand) = 0;
+B_out = im(:,:,3); B_out(~bw_final_cand) = 0;
+im_masked = cat(3, R_out, G_out, B_out);
 
-figure, imshow(im_masked); title('Resultat Millorat');
+subplot(2,3,[2 3]); imshow(im_masked); title('RESULTAT FINAL');
+subplot(2,3,6); imshow(bw_final_cand); title('Màscara');

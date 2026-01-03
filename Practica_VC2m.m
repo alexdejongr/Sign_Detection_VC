@@ -119,69 +119,96 @@ disp('Procés finalitzat. TaulaFinal creada.');
 disp(['Total mostres vàlides: ', num2str(size(TaulaFinal, 1))]);
 
 
-function im_masked = segmentar(im)
-    % 1. Convertim a HSV
+function [im_masked, bw_final] = segmentar(im)
+    % 1. PRE-PROCESSAMENT FÍSIC (RGB MATH)
+    im_double = im2double(im);
+    R = im_double(:,:,1);
+    G = im_double(:,:,2);
+    B = im_double(:,:,3);
+    
+    % A) Contrast BLAU (Obligatori)
+    % El senyal blau és profund. El cel blau té blanc (vermell).
+    contrast_blau = max(0, B - R); 
+    
+    % B) Contrast VERMELL PUR (Prohibició/Perill)
+    % CLAU PER AL CEL: Els núvols i el cel brillant tenen R i G alts.
+    % El senyal vermell té R alt i G baix. Restant G eliminem núvols.
+    contrast_vermell_pur = max(0, R - G); 
+    
+    % C) Contrast GROC (Obres)
+    % El groc és la suma de R + G.
+    contrast_groc = max(0, (R + G) - B);
+    
+    % 2. SEGMENTACIÓ HSV
     im_hsv = rgb2hsv(im);
     H = im_hsv(:,:,1);
     S = im_hsv(:,:,2);
     V = im_hsv(:,:,3);
     
-    % Vermell tolerant
-    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
-    % Blau tolerant
-    mask_blue = (H > 0.55) & (H < 0.77) & (S > 0.25) & (V > 0.15);
-    % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
-    mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
+    % --- MÀSCARES COMBINADES ---
     
-    bw_raw = mask_red | mask_blue | mask_yellow;
+    % -> VERMELL: Exigim que R sigui superior a G per evitar cels brillants
+    mask_red_hsv = ((H > 0.90) | (H < 0.12)) & (S > 0.15);
+    mask_red = mask_red_hsv & (contrast_vermell_pur > 0.05);
     
-    % Pas A: DILATAR (Connectar)
-    se_connect = strel('disk', 3); 
-    bw_connected = imdilate(bw_raw, se_connect);
+    % -> GROC: Usem el filtre càlid estàndard
+    mask_yellow_hsv = (H > 0.11) & (H < 0.18) & (S > 0.20);
+    mask_yellow = mask_yellow_hsv & (contrast_groc > 0.10);
     
-    % Pas B: OMPLIR (Sòlid)
-    bw_filled = imfill(bw_connected, 'holes');
+    % -> BLAU: Pugem la saturació mínima a 0.35 per matar el cel "rentat"
+    mask_blue_hsv = (H > 0.55) & (H < 0.75) & (S > 0.35);
+    mask_blue = mask_blue_hsv & (contrast_blau > 0.10);
     
-    % Pas C: ERODIR (Recuperar mida original)
-    bw_shrunk = imerode(bw_filled, se_connect);
+    % 3. UNIÓ I MORFOLOGIA
+    bw_raw = mask_red | mask_yellow | mask_blue;
     
-    % Pas D: NETEJA FINAL
-    se_clean = strel('disk', 2);
-    bw_clean = imopen(bw_shrunk, se_clean);
+    % Neteja acurada (Sandwich suau per no enganxar arbres)
+    se_connect = strel('disk', 2); 
+    bw = imdilate(bw_raw, se_connect);
+    bw = imfill(bw, 'holes');
+    bw = imerode(bw, se_connect);
     
-    % 4. FILTRATGE
-    bw_final = bwareafilt(bw_clean, [150, 999999]); 
+    % Obertura per treure soroll de branques fines
+    bw = imopen(bw, strel('disk', 3));
     
-    % 5. FORMA I RESCAT
-    stats = regionprops(bw_final, 'BoundingBox', 'PixelIdxList', 'Extent');
-    bw_filtrada = false(size(bw_final));
-    found_candidate = false;
+    % Filtre de mida mínima
+    bw_final_cand = bwareafilt(bw, [150, 999999]);
+    
+    % 4. SELECCIÓ DEL MILLOR CANDIDAT (ESTRATÈGIA ROBUSTA)
+    stats = regionprops(bw_final_cand, 'BoundingBox', 'Area', 'PixelIdxList', 'Solidity', 'Extent');
+    bw_good = false(size(bw_final_cand));
+    found = false;
     
     for k = 1:length(stats)
-        caixa = stats(k).BoundingBox;  
-        w_box = caixa(3); % Canviat nom per evitar conflictes
-        h_box = caixa(4); % Canviat nom per evitar conflictes
-        aspect_ratio = w_box / h_box;
+        aspect = stats(k).BoundingBox(3) / stats(k).BoundingBox(4);
         
-        es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);
-        te_consistencia = stats(k).Extent > 0.25; 
-        
-        if es_proporcionat && te_consistencia
-            bw_filtrada(stats(k).PixelIdxList) = true;
-            found_candidate = true;
+        % Criteris de forma:
+        % 1. Proporció: Ni molt pla ni molt alt (0.45 - 2.2)
+        % 2. Solidesa: El senyal ha de ser "massís" (> 0.5), no una branca dispersa
+        if (aspect > 0.45 && aspect < 2.2) && (stats(k).Solidity > 0.5)
+            bw_good(stats(k).PixelIdxList) = true;
+            found = true;
         end
     end
     
-    if found_candidate
-        bw_final = bwareafilt(bw_filtrada, 1);
-    elseif any(bw_final(:))
-        % Fail-safe: Si falla la forma, rescatem la taca de color més gran
-        bw_final = bwareafilt(bw_final, 1);
+    % LÒGICA DE RESCAT (FAIL-SAFE)
+    if found
+        % Si tenim formes bones, agafem la més gran
+        bw_final = bwareafilt(bw_good, 1);
+    elseif any(bw_final_cand(:))
+        % Si el filtre de forma ho ha matat tot (ex: senyal parcialment tapat),
+        % però teníem color correcte, recuperem la taca de color més gran.
+        % És millor passar-li al model una taca deformada que una imatge negra.
+        bw_final = bwareafilt(bw_final_cand, 1);
+    else
+        % No s'ha trobat res
+        bw_final = bw_final_cand; 
     end
-
+    
+    % 5. MASCARAR LA IMATGE ORIGINAL
     im_masked = im;
-    R = im(:,:,1); R(~bw_final) = 0;
-    G = im(:,:,2); G(~bw_final) = 0;
-    B = im(:,:,3); B(~bw_final) = 0;
-    im_masked = cat(3, R, G, B);
+    R_out = im(:,:,1); R_out(~bw_final) = 0;
+    G_out = im(:,:,2); G_out(~bw_final) = 0;
+    B_out = im(:,:,3); B_out(~bw_final) = 0;
+    im_masked = cat(3, R_out, G_out, B_out);
 end
