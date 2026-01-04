@@ -145,6 +145,7 @@ disp('Procés finalitzat. TaulaFinal creada.');
 disp(['Total mostres vàlides: ', num2str(size(TaulaFinal, 1))]);
 
 
+
 function im_masked = segmentar(im)
     % 1. Convertim a HSV
     im_hsv = rgb2hsv(im);
@@ -153,9 +154,9 @@ function im_masked = segmentar(im)
     V = im_hsv(:,:,3);
     
     % Vermell tolerant
-    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
+    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.20);
     % Blau tolerant
-    mask_blue = (H > 0.55) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+    mask_blue = (H > 0.58) & (H < 0.77) & (S > 0.25) & (V > 0.15);
     % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
     mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
     

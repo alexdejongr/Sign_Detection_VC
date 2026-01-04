@@ -194,85 +194,71 @@ disp(['⏱️ Temps:    ', num2str(temps, '%.3f'), ' s']);
 disp('=========================================');
 
 
-% =========================================================================
-%      FUNCIÓ DE SEGMENTACIÓ MILLORADA (UNIVERSAL)
-% =========================================================================
-function [im_masked, bw_final] = segmentar_universal(im)
-    % 1. PRE-PROCESSAMENT FÍSIC (Matemàtica RGB)
-    im_double = im2double(im);
-    R = im_double(:,:,1);
-    G = im_double(:,:,2);
-    B = im_double(:,:,3);
-    
-    % A) Contrast BLAU (Obligatori) -> Elimina el cel (té vermell)
-    contrast_blau = max(0, B - R); 
-    
-    % B) Contrast VERMELL PUR (Prohibició) -> Elimina núvols (tenen verd)
-    contrast_vermell_pur = max(0, R - G); 
-    
-    % C) Contrast GROC (Obres) -> Elimina cel blau
-    contrast_groc = max(0, (R + G) - B);
-    
-    % 2. SEGMENTACIÓ HSV
+
+
+function im_masked = segmentar_universal(im)
+    % 1. Convertim a HSV
     im_hsv = rgb2hsv(im);
     H = im_hsv(:,:,1);
     S = im_hsv(:,:,2);
+    V = im_hsv(:,:,3);
     
-    % --- MÀSCARES COMBINADES ---
+    % Vermell tolerant
+    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.20);
+    % Blau tolerant
+    mask_blue = (H > 0.58) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+    % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
+    mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
     
-    % -> VERMELL: Exigim R > G per matar núvols
-    mask_red_hsv = ((H > 0.90) | (H < 0.12)) & (S > 0.15);
-    mask_red = mask_red_hsv & (contrast_vermell_pur > 0.05);
+    bw_raw = mask_red | mask_blue | mask_yellow;
     
-    % -> GROC: Estàndard amb filtre càlid
-    mask_yellow_hsv = (H > 0.11) & (H < 0.18) & (S > 0.20);
-    mask_yellow = mask_yellow_hsv & (contrast_groc > 0.10);
+    % Pas A: DILATAR (Connectar)
+    se_connect = strel('disk', 3); 
+    bw_connected = imdilate(bw_raw, se_connect);
     
-    % -> BLAU: Saturació ALTA (>0.35) per matar cel clar
-    mask_blue_hsv = (H > 0.55) & (H < 0.75) & (S > 0.35);
-    mask_blue = mask_blue_hsv & (contrast_blau > 0.10);
+    % Pas B: OMPLIR (Sòlid)
+    bw_filled = imfill(bw_connected, 'holes');
     
-    % 3. UNIÓ I MORFOLOGIA
-    bw_raw = mask_red | mask_yellow | mask_blue;
+    % Pas C: ERODIR (Recuperar mida original)
+    bw_shrunk = imerode(bw_filled, se_connect);
     
-    se_connect = strel('disk', 2); 
-    bw = imdilate(bw_raw, se_connect);
-    bw = imfill(bw, 'holes');
-    bw = imerode(bw, se_connect);
+    % Pas D: NETEJA FINAL
+    se_clean = strel('disk', 2);
+    bw_clean = imopen(bw_shrunk, se_clean);
     
-    bw = imopen(bw, strel('disk', 3));
+    % 4. FILTRATGE
+    bw_final = bwareafilt(bw_clean, [150, 999999]); 
     
-    % Filtre de mida
-    bw_final_cand = bwareafilt(bw, [150, 999999]);
-    
-    % 4. SELECCIÓ ROBUSTA
-    stats = regionprops(bw_final_cand, 'BoundingBox', 'Area', 'PixelIdxList', 'Solidity', 'Extent');
-    bw_good = false(size(bw_final_cand));
-    found = false;
+    % 5. FORMA I RESCAT
+    stats = regionprops(bw_final, 'BoundingBox', 'PixelIdxList', 'Extent');
+    bw_filtrada = false(size(bw_final));
+    found_candidate = false;
     
     for k = 1:length(stats)
-        aspect = stats(k).BoundingBox(3) / stats(k).BoundingBox(4);
-        % Aspect ratio raonable i objecte sòlid (no branques)
-        if (aspect > 0.45 && aspect < 2.2) && (stats(k).Solidity > 0.5)
-            bw_good(stats(k).PixelIdxList) = true;
-            found = true;
+        caixa = stats(k).BoundingBox;  
+        w_box = caixa(3); % Canviat nom per evitar conflictes
+        h_box = caixa(4); % Canviat nom per evitar conflictes
+        aspect_ratio = w_box / h_box;
+        
+        es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);
+        te_consistencia = stats(k).Extent > 0.25; 
+        
+        if es_proporcionat && te_consistencia
+            bw_filtrada(stats(k).PixelIdxList) = true;
+            found_candidate = true;
         end
     end
     
-    % Lògica de Rescat
-    if found
-        bw_final = bwareafilt(bw_good, 1);
-    elseif any(bw_final_cand(:))
-        % Si la forma és dolenta però hi ha color correcte, ho salvem
-        bw_final = bwareafilt(bw_final_cand, 1);
-    else
-        bw_final = bw_final_cand; 
+    if found_candidate
+        bw_final = bwareafilt(bw_filtrada, 1);
+    elseif any(bw_final(:))
+        % Fail-safe: Si falla la forma, rescatem la taca de color més gran
+        bw_final = bwareafilt(bw_final, 1);
     end
-    
-    % 5. RESULTAT FINAL
+
     im_masked = im;
-    R_out = im(:,:,1); R_out(~bw_final) = 0;
-    G_out = im(:,:,2); G_out(~bw_final) = 0;
-    B_out = im(:,:,3); B_out(~bw_final) = 0;
-    im_masked = cat(3, R_out, G_out, B_out);
+    R = im(:,:,1); R(~bw_final) = 0;
+    G = im(:,:,2); G(~bw_final) = 0;
+    B = im(:,:,3); B(~bw_final) = 0;
+    im_masked = cat(3, R, G, B);
 end
