@@ -9,7 +9,7 @@ imds = imageDatastore(ruta_dataset, ...
 numImages = numel(imds.Files);
 
 % --- TOTAL FEATURES: 1771 ---
-% 4 (Forma) + 2 STOP + 3 (Color HOC) + 1764 (HOG)
+% 4 (Forma) + 3 (Color HOC) + 1764 (HOG)
 Features = zeros(numImages, 1771);
 Labels = cell(numImages, 1);
 
@@ -111,7 +111,7 @@ Labels(idx_brossa) = [];
 X_shape_color = Features(:,1:8);
 X_hog = Features(:,9:end);
 
-[~, score, ~, ~, ~] = pca(X_hog);
+[coeff_pca, score, ~, ~, ~] = pca(X_hog);
 
 % Quedarnos amb els 150 més importantss
 k = 150;
@@ -131,11 +131,9 @@ TaulaFinal.Properties.VariableNames{1} = 'Compacitat';
 TaulaFinal.Properties.VariableNames{2} = 'Solidesa';
 TaulaFinal.Properties.VariableNames{3} = 'Extent';
 TaulaFinal.Properties.VariableNames{4} = 'Excentricidad';
-TaulaFinal.Properties.VariableNames{5} = 'Densidad bordes';
-TaulaFinal.Properties.VariableNames{6} = 'Circularidad';
-TaulaFinal.Properties.VariableNames{7} = 'Pct_Red';
-TaulaFinal.Properties.VariableNames{8} = 'Pct_Blue';
-TaulaFinal.Properties.VariableNames{9} = 'Pct_Yellow';
+TaulaFinal.Properties.VariableNames{5} = 'Pct_Red';
+TaulaFinal.Properties.VariableNames{6} = 'Pct_Blue';
+TaulaFinal.Properties.VariableNames{7} = 'Pct_Yellow';
 
 TaulaFinal.Clase = string(Labels);
 

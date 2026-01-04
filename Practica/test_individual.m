@@ -1,4 +1,4 @@
-clearvars -except modelo trainedModel Features TaulaFinal; clc; close all;
+clearvars -except modelo coeff_pca trainedModel Features TaulaFinal; clc; close all;
 
 % =========================================================================
 %                       CONFIGURACIÓ INICIAL
@@ -61,12 +61,15 @@ else
     % --- PAS B: EXTRACCIÓ DE CARACTERÍSTIQUES ---
     
     % 1. FORMA
-    stats = regionprops(bw, 'Area', 'Perimeter', 'Solidity', 'BoundingBox');
+    stats = regionprops(bw, 'Area', 'Perimeter', 'Solidity', 'BoundingBox','Extent','Eccentricity');
     [~, idx] = max([stats.Area]); 
     blob = stats(idx);
     
     compacitat = (blob.Perimeter ^ 2) / blob.Area;
     solidesa = blob.Solidity;
+
+    extent = blob.Extent;
+    ecc = blob.Eccentricity;
     
     % 2. COLOR (HOC)
     rect = blob.BoundingBox;
@@ -93,26 +96,44 @@ else
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
     % VECTOR BRUT FINAL (1769 característiques)
-    VectorBrut = [compacitat, solidesa, pct_red, pct_blue, pct_yellow, hog_vector];
-    
+    w_shape = 6;
+    w_color = 2;
+    w_hog   = 0.3;
+
+    VectorBrut = [
+        w_shape * [compacitat, solidesa, extent, ecc], ...
+        w_color * [pct_red, pct_blue, pct_yellow], ...
+        w_hog   * hog_vector
+    ];
     % --- PAS C: NORMALITZACIÓ I PREDICCIÓ ---
     
     % 1. Normalitzar (Z-Score)
     VectorNorm = (VectorBrut - mu) ./ sigma;
     
     % 2. Convertir a Taula i ARREGLAR NOMS (El teu error estava aquí)
-    T_test = array2table(VectorNorm);
+    T_testAux = array2table(VectorNorm);
+
+    X_shape_color = T_testAux(:,1:8);
+    X_hog = T_testAux{:,9:end};
+
+    X_hog_pca = X_hog * coeff_pca(:,1:150);
+
+    X_hog_pca = array2table(X_hog_pca);
+
+    T_test = [X_shape_color, X_hog_pca];
     
     % Generem els noms EXACTES que espera el model
     % (Les 5 primeres manuals, la resta "FeaturesX")
-    noms_columnes = cell(1, 1769);
+    noms_columnes = cell(1, 158);
     noms_columnes{1} = 'Compacitat';
     noms_columnes{2} = 'Solidesa';
-    noms_columnes{3} = 'Pct_Red';
-    noms_columnes{4} = 'Pct_Blue';
-    noms_columnes{5} = 'Pct_Yellow';
-    for k = 6:1769
-        noms_columnes{k} = ['Features' num2str(k)];
+    noms_columnes{3} = 'Extent';
+    noms_columnes{4} = 'Excentricidad';
+    noms_columnes{5} = 'Pct_Red';
+    noms_columnes{6} = 'Pct_Blue';
+    noms_columnes{7} = 'Pct_Yellow';
+    for k = 8:158
+        noms_columnes{k} = ['Features_final' num2str(k)];
     end
     
     % Assignem els noms a la taula
