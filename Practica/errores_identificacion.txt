@@ -4,5 +4,6 @@ d_obligatoria	024_0038.png
 d_obligatoria	024_1_0038.png
 limit	004_0047.png
 limit	004_1_0047.png
+no_senyal	019.png
 vianant	035_0001.png
 vianant	035_1_0001.png

@@ -9,7 +9,7 @@ imds = imageDatastore(ruta_dataset, ...
 numImages = numel(imds.Files);
 
 % --- TOTAL FEATURES: 1771 ---
-% 4 (Forma) + 3 (Color HOC) + 1764 (HOG)
+% 4 (Forma) + 2 STOP + 3 (Color HOC) + 1764 (HOG)
 Features = zeros(numImages, 1771);
 Labels = cell(numImages, 1);
 
@@ -86,12 +86,17 @@ for i = 1:numImages
     im_resized = imresize(im_crop, [64, 64]);
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
-    % Guardem tot junt (1771 variables)
-    Features(i, :) = [compacitat, solidesa, extent, ecc, pct_red, pct_blue, pct_yellow, hog_vector];
-end
+    % Guardem tot junt (1773 variables) i ponderat
+    w_shape = 6;
+    w_color = 2;
+    w_hog   = 0.3;
 
-% Tanquem fitxer errors
-fclose(fid);
+    Features(i,:) = [
+        w_shape * [compacitat, solidesa, extent, ecc], ...
+        w_color * [pct_red, pct_blue, pct_yellow], ...
+        w_hog   * hog_vector
+    ];
+end
 
 % Neteja final de la taula
 filas_cero = all(Features == 0, 2);
@@ -102,17 +107,35 @@ idx_brossa = all(Features == 0, 2);
 Features(idx_brossa, :) = [];
 Labels(idx_brossa) = [];
 
+% Prova: PCA
+X_shape_color = Features(:,1:8);
+X_hog = Features(:,9:end);
+
+[~, score, ~, ~, ~] = pca(X_hog);
+
+% Quedarnos amb els 150 més importantss
+k = 150;
+
+X_hog_pca = score(:,1:k);
+
+Features_final = [X_shape_color, X_hog_pca];
+
+% Tanquem fitxer errors
+fclose(fid);
+
 % Creació de la Taula Final
-TaulaFinal = array2table(Features);
+TaulaFinal = array2table(Features_final);
 
 % Noms de columnes clau
 TaulaFinal.Properties.VariableNames{1} = 'Compacitat';
 TaulaFinal.Properties.VariableNames{2} = 'Solidesa';
 TaulaFinal.Properties.VariableNames{3} = 'Extent';
-TaulaFinal.Properties.VariableNames{4} = 'Excentricity';
-TaulaFinal.Properties.VariableNames{5} = 'Pct_Red';
-TaulaFinal.Properties.VariableNames{6} = 'Pct_Blue';
-TaulaFinal.Properties.VariableNames{7} = 'Pct_Yellow';
+TaulaFinal.Properties.VariableNames{4} = 'Excentricidad';
+TaulaFinal.Properties.VariableNames{5} = 'Densidad bordes';
+TaulaFinal.Properties.VariableNames{6} = 'Circularidad';
+TaulaFinal.Properties.VariableNames{7} = 'Pct_Red';
+TaulaFinal.Properties.VariableNames{8} = 'Pct_Blue';
+TaulaFinal.Properties.VariableNames{9} = 'Pct_Yellow';
 
 TaulaFinal.Clase = string(Labels);
 
