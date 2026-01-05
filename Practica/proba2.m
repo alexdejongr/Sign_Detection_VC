@@ -156,7 +156,7 @@ function im_masked = segmentar(im)
     % Vermell tolerant
     mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
     % Blau tolerant
-    mask_blue = (H > 0.55) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+    mask_blue = (H > 0.57) & (H < 0.77) & (S > 0.25) & (V > 0.15);
     % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
     mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
     
