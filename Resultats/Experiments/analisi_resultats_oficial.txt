@@ -14,16 +14,16 @@ origen: script experiments.m (k-fold = 5), 2444 mostres, 11 classes
 
 2) resultat global (comparativa)
 resultats globals a validació (k-fold = 5):
-- svm_linear_ecoc: accuracy 0.9705 | balanced acc 0.9209 | macro f1 0.9242 | speed ~6375 obs/s | train 1.15 s/fold
-- svm_rbf_ecoc:    accuracy 0.9742 | balanced acc 0.9349 | macro f1 0.9362 | speed ~2754 obs/s | train 0.75 s/fold
-- ensemble_bag:    accuracy 0.9746 | balanced acc 0.9348 | macro f1 0.9388 | speed ~1906 obs/s | train 3.35 s/fold
-- logistic_ecoc:   accuracy 0.9689 | balanced acc 0.9207 | macro f1 0.9237 | speed ~16497 obs/s | train 0.64 s/fold
-- lda:             accuracy 0.9693 | balanced acc 0.9292 | macro f1 0.9272 | speed ~15828 obs/s | train 0.13 s/fold
+- svm lineal amb ecoc one-vs-all (svm_linear_ecoc): accuracy 0.9705 | balanced acc 0.9209 | macro f1 0.9242 | speed ~6375 obs/s | train 1.15 s/fold
+- svm rbf amb ecoc one-vs-all, kernel scale auto (svm_rbf_ecoc): accuracy 0.9742 | balanced acc 0.9349 | macro f1 0.9362 | speed ~2754 obs/s | train 0.75 s/fold
+- ensemble bagging d'arbres (random forest style), 200 arbres (ensemble_bag): accuracy 0.9746 | balanced acc 0.9348 | macro f1 0.9388 | speed ~1906 obs/s | train 3.35 s/fold
+- regressió logística multiclasse via ecoc one-vs-all (logistic_ecoc): accuracy 0.9689 | balanced acc 0.9207 | macro f1 0.9237 | speed ~16497 obs/s | train 0.64 s/fold
+- lda (linear discriminant analysis) (lda): accuracy 0.9693 | balanced acc 0.9292 | macro f1 0.9272 | speed ~15828 obs/s | train 0.13 s/fold
 
 interpretació
 - tots els models mostren accuracy alta (~96.9–97.5%), però això està influenciat per classes majoritàries i fàcils.
 - les mètriques que millor reflecteixen comportament equilibrat són balanced accuracy i macro f1.
-- el millor macro f1 és ensemble_bag (0.9388) i la millor balanced accuracy és svm_rbf_ecoc (0.9349), molt propera a ensemble_bag (0.9348).
+- el millor macro f1 és l'ensemble bagging d'arbres (ensemble_bag) (0.9388) i la millor balanced accuracy és la svm rbf amb ecoc (svm_rbf_ecoc) (0.9349), molt propera a (ensemble_bag) (0.9348).
 
 3) anàlisi per classes (fortaleses i debilitats)
 classes molt robustes (quasi perfectes)
@@ -37,23 +37,23 @@ classes problemàtiques (limitants)
 
 3.1) classe no_senyal
 recall (no_senyal) per model:
-- svm_linear_ecoc: 0.6267
-- logistic_ecoc:   0.7200
-- lda:             0.8133
-- svm_rbf_ecoc:    0.8400
-- ensemble_bag:    0.8800
+- svm lineal amb ecoc (svm_linear_ecoc): 0.6267
+- regressió logística via ecoc (logistic_ecoc): 0.7200
+- lda (lda): 0.8133
+- svm rbf amb ecoc (svm_rbf_ecoc): 0.8400
+- ensemble bagging d'arbres (ensemble_bag): 0.8800
 
 interpretació
 - no_senyal és una classe “heterogènia” (pot incloure molts fons i situacions diferents), i tendeix a beneficiar-se de models més flexibles.
-- ensemble_bag i svm_rbf_ecoc són els que capten millor la variabilitat, i per tant són els millors candidats si la prioritat és generalitzar en aquesta classe.
+- l'ensemble bagging d'arbres (ensemble_bag) i la svm rbf amb ecoc (svm_rbf_ecoc) són els que capten millor la variabilitat, i per tant són els millors candidats si la prioritat és generalitzar en aquesta classe.
 
 3.2) classe stop
 recall (stop) per model:
-- svm_linear_ecoc: 0.5263
-- svm_rbf_ecoc:    0.4737
-- ensemble_bag:    0.4474
-- logistic_ecoc:   0.4737
-- lda:             0.5395
+- svm lineal amb ecoc (svm_linear_ecoc): 0.5263
+- svm rbf amb ecoc (svm_rbf_ecoc): 0.4737
+- ensemble bagging d'arbres (ensemble_bag): 0.4474
+- regressió logística via ecoc (logistic_ecoc): 0.4737
+- lda (lda): 0.5395
 
 interpretació
 - cap dels models resol stop de manera satisfactòria: el recall queda al voltant de 0.45–0.54.
@@ -69,17 +69,17 @@ interpretació
 5) selecció del model segons criteri
 recomanació (validació interna)
 - si el criteri principal és robustesa macro (millor rendiment equilibrat per classe dins el dataset intern):
-  - candidat 1: ensemble_bag (millor macro f1 i millor no_senyal)
-  - candidat 2: svm_rbf_ecoc (molt proper i sovint millor en balanced accuracy)
+  - candidat 1: ensemble bagging d'arbres (ensemble_bag) (millor macro f1 i millor no_senyal)
+  - candidat 2: svm rbf amb ecoc (svm_rbf_ecoc) (molt proper i sovint millor en balanced accuracy)
 
 criteri de rendiment computacional
 - si el criteri principal és velocitat de predicció (temps real) i simplicitat:
-  - logistic_ecoc i lda són molt ràpids (~16k obs/s), però perden robustesa en no_senyal respecte a rbf/ensemble.
+  - regressió logística via ecoc (logistic_ecoc) i lda (lda) són molt ràpids (~16k obs/s), però perden robustesa en no_senyal respecte a svm rbf / ensemble.
 
 6) conclusions i següents passos recomanats
 conclusió
 - els models actuals aconsegueixen una accuracy global molt alta, però el rendiment real es veu limitat per stop i no_senyal.
 - la selecció del model s’ha de basar en balanced accuracy i macro f1, no en accuracy.
-- dins el dataset intern, ensemble_bag i svm_rbf_ecoc són els millors candidats.
+- dins el dataset intern, l'ensemble bagging d'arbres (ensemble_bag) i la svm rbf amb ecoc (svm_rbf_ecoc) són els millors candidats.
 
 
