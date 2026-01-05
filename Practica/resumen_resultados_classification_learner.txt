@@ -1,0 +1,55 @@
+resum de resultats (classification learner)
+data: 2026-01-05
+
+nota: tots els models mostren "feature selection: 157/157" i "pca: disabled".
+nota: alguns models mostren l'avís "poor results possibly due to infs or very large values in predictors".
+
+model 7: svm
+status: trained
+accuracy (validation): 95.9 %
+total cost (validation): 101
+error rate (validation): 4.1 %
+prediction speed: ~7600 obs/sec
+training time: 10.851 sec
+model size (compact): ~3 mb
+model size (coder): ~517 kb
+
+model 5: ensemble
+status: trained
+accuracy (validation): 96.1 %
+total cost (validation): 96
+error rate (validation): 3.9 %
+prediction speed: ~7900 obs/sec
+training time: 20.567 sec
+model size (compact): ~3 mb
+model size (coder): ~872 kb
+
+model 4: svm
+status: trained
+accuracy (validation): 96.4 %
+total cost (validation): 88
+error rate (validation): 3.6 %
+prediction speed: ~2400 obs/sec
+training time: 14.108 sec
+model size (compact): ~10 mb
+model size (coder): ~8 mb
+
+model 3: efficient logistic regression
+status: trained
+accuracy (validation): 95.7 %
+total cost (validation): 105
+error rate (validation): 4.3 %
+prediction speed: ~8900 obs/sec
+training time: 16.66 sec
+model size (compact): ~3 mb
+model size (coder): ~291 kb
+
+model 2: linear discriminant
+status: trained
+accuracy (validation): 96.3 %
+total cost (validation): 90
+error rate (validation): 3.7 %
+prediction speed: ~15000 obs/sec
+training time: 3.4426 sec
+model size (compact): ~470 kb
+model size (coder): ~256 kb
