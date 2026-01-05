@@ -1,88 +1,74 @@
-clearvars -except modelo coeff_pca trainedModel Features TaulaFinal; clc; close all;
+clearvars -except modelo trainedModel; clc; close all;
 
 % =========================================================================
-%                       CONFIGURACIÓ INICIAL
+% 1. CARREGA DE DADES DE NORMALITZACIÓ I PCA
 % =========================================================================
-
-% 1. RECUPERAR DADES DE NORMALITZACIÓ
-% Necessitem la Mitjana (mu) i Desviació (sigma) de les dades originals.
-if exist('Features', 'var')
-    mu = mean(Features);
-    sigma = std(Features);
-    disp('✅ Dades de normalització: Recuperades de "Features".');
-elseif exist('TaulaFinal', 'var')
-    % Si només tens la TaulaFinal (ja normalitzada), intentem fer enginyeria inversa
-    % o assumim que tens les dades crues en una altra variable.
-    % L'ideal és tenir 'Features'. Si no, avisem.
-    disp('⚠️ ALERTA: No trobo "Features" (dades crues). Si "TaulaFinal" ja està normalitzada,');
-    disp('   això no serà exacte. Intentant recuperar dades...');
-    raw_data = TaulaFinal{:, 1:end-1}; 
-    mu = mean(raw_data); % Això serà 0 si ja està normalitzat (malament)
-    sigma = std(raw_data); % Això serà 1 (malament)
-    if abs(mean(mu)) < 0.1
-        error('❌ ERROR CRÍTIC: La variable "Features" no hi és i "TaulaFinal" sembla ja normalitzada. Necessito les dades originals per calcular la mitjana real.');
-    end
+if exist('Dades_Model.mat', 'file')
+    load('Dades_Model.mat', 'mu', 'sigma', 'coeff_pca');
+    disp('Dades del model (PCA i Normalitzacio) carregades correctament.');
 else
-    error('❌ ERROR: Necessito la variable "Features" al Workspace.');
+    error('Error: No es troba l''arxiu Dades_Model.mat. Executa l''script principal primer.');
 end
 
-% 2. DETECTAR EL MODEL
+% Detectar quin tipus de model tenim actiu
 if exist('modelo', 'var')
     model_actiu = modelo;
-    disp('✅ Model detectat: "modelo"');
+    disp('Utilitzant model: SVM Manual (modelo)');
 elseif exist('trainedModel', 'var')
     model_actiu = trainedModel;
-    disp('✅ Model detectat: "trainedModel"');
+    disp('Utilitzant model: Classification Learner (trainedModel)');
 else
-    error('❌ ERROR: No trobo "modelo" ni "trainedModel" al Workspace.');
+    error('Error: No hi ha cap model carregat al Workspace.');
 end
 
-% 3. SELECCIONAR IMATGE
-[arxiu, ruta] = uigetfile({'*.jpg;*.png;*.bmp', 'Imatges'}, 'Selecciona una imatge per test');
+% =========================================================================
+% 2. SELECCIÓ D'IMATGE
+% =========================================================================
+[arxiu, ruta] = uigetfile({'*.jpg;*.png;*.bmp', 'Imatges'}, 'Selecciona una imatge');
 if isequal(arxiu, 0), return; end
 
 im_original = imread(fullfile(ruta, arxiu));
 im = im2uint8(im_original);
 
-% =========================================================================
-%                       PROCESSAMENT (PIPELINE)
-% =========================================================================
-tic; % Inici cronòmetre
+tic; % Inici cronometre
 
-% --- PAS A: SEGMENTACIÓ ROBUSTA (UNIVERSAL) ---
-[im_masked, bw] = segmentar_universal(im);
+% =========================================================================
+% 3. SEGMENTACIÓ
+% =========================================================================
+im_masked = segmentar_universal(im);
 
-% Validació
+% Comprovacio rapida si la imatge es negra
+im_gray = rgb2gray(im_masked);
+bw = imbinarize(im_gray, 0.01);
+
 if ~any(bw(:))
-    resultat_text = 'NO-SENYAL (No detectat)';
+    resultat_text = 'NO DETECTAT';
     score_max = 0;
-    color_titol = 'red';
 else
-    % --- PAS B: EXTRACCIÓ DE CARACTERÍSTIQUES ---
+    % =====================================================================
+    % 4. EXTRACCIÓ DE CARACTERÍSTIQUES
+    % =====================================================================
     
-    % 1. FORMA
+    % --- A. FORMA ---
     stats = regionprops(bw, 'Area', 'Perimeter', 'Solidity', 'BoundingBox','Extent','Eccentricity');
     [~, idx] = max([stats.Area]); 
     blob = stats(idx);
     
     compacitat = (blob.Perimeter ^ 2) / blob.Area;
     solidesa = blob.Solidity;
-
     extent = blob.Extent;
     ecc = blob.Eccentricity;
     
-    % 2. COLOR (HOC)
+    % --- B. COLOR (HOC) ---
     rect = blob.BoundingBox;
     im_crop = imcrop(im_masked, rect);
     
-    im_hsv_crop = rgb2hsv(im_crop);
-    H_c = im_hsv_crop(:,:,1);
-    S_c = im_hsv_crop(:,:,2);
-    
     mask_valid = max(im_crop, [], 3) > 0;
-    total_pixels = sum(mask_valid(:)) + 1;
+    if sum(mask_valid(:)) == 0, total_pixels = 1; else, total_pixels = sum(mask_valid(:)); end
     
-    % Llindars HSV (els mateixos de l'entrenament)
+    im_hsv_crop = rgb2hsv(im_crop);
+    H_c = im_hsv_crop(:,:,1); S_c = im_hsv_crop(:,:,2);
+    
     p_red = sum(mask_valid(:) & ((H_c(:)>0.85)|(H_c(:)<0.15)) & (S_c(:)>0.25));
     p_blue = sum(mask_valid(:) & (H_c(:)>0.50)&(H_c(:)<0.75) & (S_c(:)>0.25));
     p_yellow = sum(mask_valid(:) & (H_c(:)>0.12)&(H_c(:)<0.20) & (S_c(:)>0.25));
@@ -91,111 +77,102 @@ else
     pct_blue = p_blue / total_pixels;
     pct_yellow = p_yellow / total_pixels;
     
-    % 3. TEXTURA (HOG)
+    % --- C. TEXTURA (HOG) ---
     im_resized = imresize(im_crop, [64, 64]);
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
-    % VECTOR BRUT FINAL (1769 característiques)
-    w_shape = 6;
-    w_color = 2;
-    w_hog   = 0.3;
-
-    VectorBrut = [
-        w_shape * [compacitat, solidesa, extent, ecc], ...
-        w_color * [pct_red, pct_blue, pct_yellow], ...
-        w_hog   * hog_vector
-    ];
-    % --- PAS C: NORMALITZACIÓ I PREDICCIÓ ---
+    % =====================================================================
+    % 5. CONSTRUCCIÓ DEL VECTOR I PCA
+    % =====================================================================
     
-    % 1. Normalitzar (Z-Score)
-    VectorNorm = (VectorBrut - mu) ./ sigma;
+    % Pesos (Han de ser els mateixos que al training!)
+    w_shape = 6; 
+    w_color = 2; 
+    w_hog = 0.3;
     
-    % 2. Convertir a Taula i ARREGLAR NOMS (El teu error estava aquí)
-    T_testAux = array2table(VectorNorm);
-
-    X_shape_color = T_testAux(:,1:8);
-    X_hog = T_testAux{:,9:end};
-
-    X_hog_pca = X_hog * coeff_pca(:,1:150);
-
-    X_hog_pca = array2table(X_hog_pca);
-
-    T_test = [X_shape_color, X_hog_pca];
+    % 1. Apliquem pesos
+    feat_shape_color = [w_shape * [compacitat, solidesa, extent, ecc], ...
+                        w_color * [pct_red, pct_blue, pct_yellow]];
     
-    % Generem els noms EXACTES que espera el model
-    % (Les 5 primeres manuals, la resta "FeaturesX")
-    noms_columnes = cell(1, 158);
-    noms_columnes{1} = 'Compacitat';
-    noms_columnes{2} = 'Solidesa';
-    noms_columnes{3} = 'Extent';
-    noms_columnes{4} = 'Excentricidad';
-    noms_columnes{5} = 'Pct_Red';
-    noms_columnes{6} = 'Pct_Blue';
-    noms_columnes{7} = 'Pct_Yellow';
-    for k = 8:158
-        noms_columnes{k} = ['Features_final' num2str(k)];
+    feat_hog_weighted = w_hog * hog_vector;
+    
+    % 2. Projecció PCA (nomes a la part HOG)
+    % Nota: coeff_pca ja conte la transformacio per a les 150 variables
+    feat_hog_pca = feat_hog_weighted * coeff_pca(:, 1:150);
+    
+    % 3. Concatenacio Final
+    VectorFinal = [feat_shape_color, feat_hog_pca];
+    
+    % 4. Normalitzacio Z-Score (usant mu i sigma carregats)
+    VectorNorm = (VectorFinal - mu) ./ sigma;
+    
+    % =====================================================================
+    % 6. PREPARACIÓ DE LA TAULA I PREDICCIÓ
+    % =====================================================================
+    T_test = array2table(VectorNorm);
+    
+    % Assignacio de noms de variables per evitar error del SVM
+    noms_manuals = {'Compacitat', 'Solidesa', 'Extent', 'Excentricidad', ...
+                    'Pct_Red', 'Pct_Blue', 'Pct_Yellow'};
+    noms_pca = cell(1, 150);
+    for j = 1:150, noms_pca{j} = ['PCA_' num2str(j)]; end
+    
+    % Intentem usar els noms del model si existeixen, sino els genèrics
+    if isa(model_actiu, 'ClassificationSVM') && ~isempty(model_actiu.PredictorNames)
+        if length(model_actiu.PredictorNames) == width(T_test)
+            T_test.Properties.VariableNames = model_actiu.PredictorNames;
+        else
+            T_test.Properties.VariableNames = [noms_manuals, noms_pca];
+        end
+    else
+        T_test.Properties.VariableNames = [noms_manuals, noms_pca];
     end
-    
-    % Assignem els noms a la taula
-    T_test.Properties.VariableNames = noms_columnes;
-    
-    % 3. Predicció
+
     try
         if isstruct(model_actiu) && isfield(model_actiu, 'predictFcn')
-            % Cas 'trainedModel' (Exportat de l'App)
             [pred, scores] = model_actiu.predictFcn(T_test);
         else
-            % Cas 'modelo' (Objecte SVM directe)
-            % Comprovem si el model vol noms diferents per seguretat
-            if isa(model_actiu, 'ClassificationSVM') && ~isempty(model_actiu.PredictorNames)
-                 % Si el model té noms guardats, els fem servir prioritàriament
-                 if length(model_actiu.PredictorNames) == width(T_test)
-                     T_test.Properties.VariableNames = model_actiu.PredictorNames;
-                 end
-            end
             [pred, scores] = predict(model_actiu, T_test);
         end
         
         resultat_text = char(pred);
         score_max = max(scores);
-        color_titol = 'blue';
         
     catch ME
-        resultat_text = 'ERROR PREDICCIÓ';
+        resultat_text = 'Error Prediccio';
         score_max = 0;
-        color_titol = 'red';
-        disp(['❌ ERROR: ' ME.message]);
+        disp(ME.message);
     end
 end
+
 temps = toc;
 
 % =========================================================================
-%                       VISUALITZACIÓ
+% 7. VISUALITZACIÓ
 % =========================================================================
-figure('Color','w', 'Name', 'Resultat Test Individual', 'Position', [100 100 900 400]);
+figure('Color','w', 'Position', [100 100 1000 500]);
 
-% Imatge Original
-subplot(1,2,1); 
-imshow(im_original); 
-title('Imatge Original', 'FontSize', 12);
+subplot(1, 2, 1);
+imshow(im_original);
+title('Imatge Original');
 
-% Resultat amb Màscara
-subplot(1,2,2); 
-imshow(im_masked); 
-title({['PREDICCIÓ: ' resultat_text], ...
-       ['Confiança: ' num2str(score_max, '%.4f')]}, ...
-       'Color', color_titol, 'FontSize', 16, 'Interpreter', 'none', 'FontWeight', 'bold');
+subplot(1, 2, 2);
+imshow(im_masked);
+title({['PREDICCIO: ' resultat_text], ...
+       ['Confianca: ' num2str(score_max*100, '%.2f') '%']}, ...
+       'FontSize', 14, 'FontWeight', 'bold', 'Interpreter', 'none');
 
-disp('=========================================');
-disp(['📂 Fitxer:   ', arxiu]);
-disp(['🤖 Resultat: ', resultat_text]);
-disp(['📊 Score:    ', num2str(score_max, '%.4f')]);
-disp(['⏱️ Temps:    ', num2str(temps, '%.3f'), ' s']);
-disp('=========================================');
+disp('-----------------------------------------');
+disp(['Arxiu:    ', arxiu]);
+disp(['Prediccio: ', resultat_text]);
+disp(['Confianca: ', num2str(score_max*100, '%.2f'), '%']);
+disp(['Temps:     ', num2str(temps, '%.3f'), ' s']);
+disp('-----------------------------------------');
 
 
-
-
+% =========================================================================
+% FUNCIÓ DE SEGMENTACIÓ FINAL
+% =========================================================================
 function im_masked = segmentar_universal(im)
     % 1. Convertim a HSV
     im_hsv = rgb2hsv(im);
@@ -204,9 +181,9 @@ function im_masked = segmentar_universal(im)
     V = im_hsv(:,:,3);
     
     % Vermell tolerant
-    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.20);
+    mask_red = ((H > 0.90) | (H < 0.12)) & (S > 0.15) & (V > 0.15);
     % Blau tolerant
-    mask_blue = (H > 0.58) & (H < 0.77) & (S > 0.25) & (V > 0.15);
+    mask_blue = (H > 0.57) & (H < 0.77) & (S > 0.25) & (V > 0.15);
     % Groc "intel·ligent" (Tancat a 0.19 per evitar fulles verdes)
     mask_yellow = (H > 0.11) & (H < 0.19) & (S > 0.25) & (V > 0.25);
     

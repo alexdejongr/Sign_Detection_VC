@@ -108,8 +108,8 @@ Features(idx_brossa, :) = [];
 Labels(idx_brossa) = [];
 
 % Prova: PCA
-X_shape_color = Features(:,1:8);
-X_hog = Features(:,9:end);
+X_shape_color = Features(:,1:7);
+X_hog = Features(:,8:end);
 
 [coeff_pca, score, ~, ~, ~] = pca(X_hog);
 
@@ -144,7 +144,41 @@ disp('Procés finalitzat. TaulaFinal creada.');
 % Usem size(..., 1) per evitar conflictes amb la variable 'height'
 disp(['Total mostres vàlides: ', num2str(size(TaulaFinal, 1))]);
 
+% ... (El teu codi anterior on calcules PCA i Features_final) ...
 
+Features_final = [X_shape_color, X_hog_pca];
+
+% =========================================================================
+%     NORMALITZACIÓ EXPLÍCITA I GUARDAT DE DADES
+% =========================================================================
+
+% 1. Calculem la Mitjana (mu) i Desviació (sigma) de les 157 variables
+% Això és el que necessita el Test Individual per "imitar" l'entrenament
+mu = mean(Features_final);
+sigma = std(Features_final);
+
+% 2. Apliquem la normalització (Z-Score) manualment
+Features_Norm = (Features_final - mu) ./ sigma;
+
+% 3. Creem la Taula Final amb les dades JA normalitzades
+TaulaFinal = array2table(Features_Norm);
+
+% Assignem noms (opcional però recomanat)
+noms_manuals = {'Compacitat', 'Solidesa', 'Extent', 'Excentricidad', ...
+                'Pct_Red', 'Pct_Blue', 'Pct_Yellow'};
+noms_pca = cell(1, 150);
+for j = 1:150, noms_pca{j} = ['PCA_' num2str(j)]; end
+TaulaFinal.Properties.VariableNames = [noms_manuals, noms_pca];
+
+% Afegim la classe
+TaulaFinal.Clase = string(Labels);
+
+disp('✅ TaulaFinal creada i normalitzada.');
+
+% 4. GUARDAR EL "CERVELL" DEL SISTEMA (.mat)
+% Guardem coeff_pca (per transformar el HOG) i mu/sigma (per normalitzar)
+save('Practica/Dades_Model.mat', 'mu', 'sigma', 'coeff_pca');
+disp('💾 Arxiu "Dades_Model.mat" guardat. Ara el test individual funcionarà sol.');
 
 function im_masked = segmentar(im)
     % 1. Convertim a HSV
