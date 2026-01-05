@@ -60,7 +60,7 @@ interpretació
 - això suggereix que el coll d’ampolla és el pipeline (segmentació/crop o representació de característiques), més que no pas el tipus concret de classificador.
 - en les confusion matrices, stop es confon principalment amb no_senyal i, en menor mesura, amb limit.
 
-4) què significa “confusion matrix normalitzada per fila (%)”
+4) confusion matrix normalitzada per fila (%)”
 - cada fila correspon a la classe real, i cada columna a la classe predita.
 - normalitzar per fila vol dir que els valors de cada fila sumen 100%.
 - interpretació directa: “d’entre totes les mostres reals d’una classe, quin % el model les etiqueta com a cada classe”.
@@ -82,13 +82,4 @@ conclusió
 - la selecció del model s’ha de basar en balanced accuracy i macro f1, no en accuracy.
 - dins el dataset intern, ensemble_bag i svm_rbf_ecoc són els millors candidats.
 
-següents passos (recomanats)
-- prioritat 1: test extern (generalització)
-  - repetir l’avaluació en un conjunt extern fix (imatges noves) i decidir el model final segons aquest resultat.
-- prioritat 2: anàlisi qualitativa dels errors
-  - revisar exemples de stop→no_senyal i no_senyal→stop (cropping, resolució, fons)
-  - identificar si el problema ve de bounding box, de llindars hsv o de la representació HOG.
-- prioritat 3: millora del pipeline per stop
-  - provar una feature específica d’interior (bordes/contingut) o ajustar el crop per capturar millor l’octàgon i el text.
 
-fi
