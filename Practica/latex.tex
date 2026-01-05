@@ -1,0 +1,239 @@
+\documentclass[a4paper,12pt]{article}
+
+% Paquets bàsics per a l'idioma i format
+\usepackage[catalan]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{graphicx}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{float}
+\usepackage{caption}
+
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[catalan]{babel}
+\usepackage{geometry}
+
+% Configuració de marges
+\geometry{top=2.5cm, bottom=2.5cm, left=3cm, right=3cm}
+
+\begin{document}
+
+% --- INICI DE LA PORTADA ---
+\begin{titlepage}
+    \centering
+    \vspace*{1cm}
+    
+    % Nom de l'assignatura o Universitat (Opcional, pots canviar-ho)
+    {\scshape\LARGE Visió per Computador \par}
+    \vspace{2cm}
+    
+    % Línia superior
+    \rule{\linewidth}{0.5mm} \\[0.4cm]
+    
+    % Títol del treball
+    { \huge \bfseries Desenvolupament d'un Sistema Robust de Detecció i Classificació de Senyals de Trànsit mitjançant Visió per Computador \par}
+    
+    % Línia inferior
+    \rule{\linewidth}{0.5mm} \\[1.5cm]
+    
+    \vfill % Això empeny la resta cap al final de la pàgina
+    
+    % Autor
+    {\Large \textbf{Autors:} Enric Segarra, Alexander de Jong \par}
+    \vspace{0.5cm}
+    
+    % Data
+    {\large \today \par}
+    
+    \vspace*{2cm}
+\end{titlepage}
+% --- FI DE LA PORTADA ---
+
+\tableofcontents
+\newpage
+
+
+
+
+\section{Introducció i objectius}
+
+En el camp de la visió per computador, el reconeixement d'objectes dintre d'imatges sempre ha sigut un dels principals objectius, disposant avui en dia de diferents tècniques i metodologies per a aconseguir-ho. Tot i això, continua havent-hi marge de millora, sent un àmbit amb un grandíssim interès darrere, creant molta recerca i investigació per incrementar la fiabilitat que s'ha aconseguit actualment.
+
+L'objectiu d'aquest treball és una part concreta d'aquest camp: el reconeixement de senyals de trànsit. Tot i ser molt més específic, identificar aquests senyals és d'una gran importància per a moltes aplicacions actuals, com ara l'assistència al conductor dels cotxes actuals (sistema ADAS) o la futurística conducció autònoma, la qual conforma un dels grans objectius de moltes empreses automobilístiques, essent cada dia que passa més viable.
+
+A partir dels mètodes estudiats al llarg del curs, s'ha intentat realitzar el millor reconeixement possible, identificant si hi ha senyal de trànsit o no i, en cas afirmatiu, classificar-la en una de les deu possibles classes de senyals que estipula l'enunciat. A continuació, en aquest informe es documenta la metodologia emprada per assolir aquests objectius i el raonament darrere d'aquesta, junt amb l'experimentació realitzada i els resultats obtinguts.
+
+\subsection{dataset i distribució de classes}
+
+El conjunt de dades utilitzat conté un total de 2453 imatges distribuïdes en 11 carpetes (classes): \texttt{d\_obligatoria} (147), \texttt{d\_prohibida} (162), \texttt{limit} (648), \texttt{no\_aparcar} (324), \texttt{no\_girar} (138), \texttt{no\_senyal} (76), \texttt{no\_soroll} (130), \texttt{stop} (76), \texttt{vianant} (156), \texttt{zona\_bici} (150) i \texttt{zona\_cotxe} (446).
+
+És important remarcar que el dataset és desbalancejat (per exemple, \texttt{limit} té moltes més mostres que \texttt{stop} o \texttt{no\_senyal}). Per aquest motiu, durant l'experimentació no només s'avalua la precisió global (\textit{accuracy}), sinó també el comportament per classe mitjançant la matriu de confusió i el \textit{recall} per classe.
+
+\section{Segmentació}
+
+El procés de segmentació és la primera etapa crítica del sistema i té com a objectiu aïllar les Regions d'Interès (ROI), que potencialment contenen un senyal de trànsit, eliminant la resta de l'escena (cel, carretera, vegetació).
+
+S'ha implementat un algorisme basat en la detecció de color en l'espai HSV, reforçat amb operacions morfològiques i filtratge geomètric. A continuació es detallen les fases de l'algorisme:
+
+\subsection{Transformació de l'espai de color}
+
+La imatge original en format RGB (Vermell, Verd, Blau) es converteix a l'espai de color HSV (Matís, Saturació, Valor). Aquesta transformació és fonamental perquè l'espai RGB és molt sensible a les variacions d'il·luminació (ombres, sol directe), mentre que l'HSV separa la informació cromàtica ($H$) de la intensitat lumínica ($V$), permetent una detecció més robusta en exteriors.
+
+\subsection{Llindars de Color}
+
+S'han definit màscares binàries per als tres colors principals dels senyals: vermell, blau i groc. Els rangs s'han ajustat experimentalment per maximitzar la detecció del senyal i minimitzar el soroll ambiental:
+
+\begin{itemize}
+    \item \textbf{Màscara Vermella:} Es gestiona la particularitat cíclica del canal $H$ (el vermell es troba als extrems 0 i 1). S'accepten píxels amb $H > 0.90$ o $H < 0.12$. S'estableix una saturació mínima ($S > 0.15$) i brillantor ($V > 0.15$) per evitar detectar objectes grisos foscos o negres.
+    
+    \item \textbf{Màscara Blava:} S'ha aplicat un filtratge estricte per evitar la confusió habitual amb el cel. El rang de matís s'ha fixat en $H \in [0.57, 0.77]$. El límit inferior de 0.57 és crític, ja que permet descartar els tons cian (blau cel) mantenint el blau característic dels senyals (sobretot la classe zona cotxe). La saturació mínima és més exigent ($S > 0.25$) per garantir colors vius.
+    
+    \item \textbf{Màscara Groga (Obres):} S'ha limitat el rang superior a $H < 0.19$ per evitar la detecció de fulles verdes groguenques o vegetació seca.
+\end{itemize}
+
+\subsection{Processament Morfològic}
+
+Un cop obtinguda la màscara binària combinada (\texttt{bw\_raw}), s'aplica una seqüència d'operacions morfològiques per millorar la qualitat de la regió detectada:
+
+\begin{description}
+    \item[Dilatació (\texttt{imdilate}, disc $r=3$):] Connecta components propers que podrien haver quedat separats (per exemple, si el pictograma intern del senyal trenca la continuïtat del color).
+    \item[Ompliment de forats (\texttt{imfill}):] Converteix el senyal en un objecte sòlid, eliminant els buits interns generats pels símbols blancs o negres del senyal.
+    \item[Erosió (\texttt{imerode}, disc $r=3$):] Restaura la mida original de l'objecte després de la dilatació, perfilant-ne les vores.
+    \item[Obertura (\texttt{imopen}, disc $r=2$):] Elimina el soroll residual de mida petita (soroll de sal) i desconnecta elements fins com branques d'arbres que puguin haver quedat units al senyal.
+\end{description}
+
+\subsection{Filtratge geomètric i selecció de candidats}
+
+Finalment, s'analitzen les regions connectades (\textit{blobs}) resultants per decidir quines són senyals vàlids. S'apliquen tres criteris:
+
+\begin{itemize}
+    \item \textbf{Filtre d'Àrea:} S'eliminen tots els objectes amb menys de 150 píxels, considerats soroll.
+    \item \textbf{Relació d'Aspecte (Aspect Ratio):} Es calcula la proporció entre l'amplada i l'alçada de la caixa contenidora (\textit{Bounding Box}). S'accepten objectes amb una relació entre 0.4 i 2.2, descartant així objectes molt allargats o aplanats (com línies de la carretera o pals).
+    \item \textbf{Consistència (Extent):} Es calcula la relació entre l'àrea de l'objecte i l'àrea de la seva caixa contenidora. S'exigeix un valor $> 0.25$ per descartar objectes amb formes molt disperses o buides (típic de la vegetació).
+\end{itemize}
+
+Com a mesura de seguretat, l'algorisme inclou una lògica de rescat: si cap objecte supera els filtres geomètrics estrictes però hi ha detecció de color significativa, el sistema selecciona la regió de color més gran per evitar perdre un senyal que pugui estar parcialment oclòs o deformat.
+
+\subsection{Validació Qualitativa: Estudi de Casos}
+
+Per tal de verificar la robustesa de l'algorisme de segmentació proposat, s'han seleccionat cinc escenaris reals que presenten dificultats habituals en visió per computador (il·luminació variable, fons complexos i similitud cromàtica). A continuació s'analitza el comportament del sistema en cadascun d'ells.
+
+\subsubsection{Cas 1: Robustesa davant el Cel Blau (El conflicte Cian)}
+
+\begin{figure}[H]
+    \centering
+    % Substitueix 'stop.jpg' pel nom real del fitxer a la teva carpeta
+    \includegraphics[width=0.8\textwidth]{stop.png} 
+    \caption{Segmentació d'un senyal STOP amb fons de cel blau intens.}
+    \label{fig:stop_sky}
+\end{figure}
+
+A la Figura \ref{fig:stop_sky} s'observa un senyal d'STOP vermell retallat contra un cel blau clar. Aquest és un cas crític ja que molts algorismes confonen la lluminositat del cel amb el blanc del senyal, o el blau del cel amb senyals d'obligació.
+\begin{itemize}
+    \item \textbf{Anàlisi:} La segmentació es basa en umbrals en l'espai HSV. Per evitar confondre cel i núvols amb el senyal, s'exigeix una saturació mínima ($S$) i una lluminositat mínima ($V$). En el cas del vermell s'accepta $V > 0.15$ i per al groc $V > 0.25$, reduint falsos positius en zones molt clares.
+    \item \textbf{Resultat:} Segmentació correcta del senyal, i el filtratge geomètric (àrea, aspect ratio i extent) descarta regions no compatibles amb una senyal.
+\end{itemize}
+
+
+\subsubsection{Cas 2: Senyals de Límit de Velocitat vs. Cel Clar}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{limit.png}
+    \caption{Senyal de prohibició (80 km/h) amb fons de cel i branques fines.}
+    \label{fig:limit_80}
+\end{figure}
+
+En aquest cas (Figura \ref{fig:limit_80}), l'anella vermella del senyal és prima i el fons és un cel blau molt lluminós.
+\begin{itemize}
+    \item \textbf{Anàlisi:} Es detecta l'anella vermella amb umbrals de to ($H$) i saturació ($S$) en HSV, i després s'apliquen operacions morfològiques (dilatació, omplir forats, erosió i obertura) per connectar i netejar la regió.
+    \item \textbf{Resultat:} La regió del senyal queda aïllada de manera raonable tot i ser prima, i el filtratge geomètric ajuda a descartar branques o fragments del cel.
+   
+\end{itemize}
+
+\subsubsection{Cas 3: Gestió de Fons Complexos i Textures}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{zonabici.png}
+    \caption{Senyal de carril bici amb fons de vegetació densa.}
+    \label{fig:zona_bici}
+\end{figure}
+
+La Figura \ref{fig:zona_bici} presenta un senyal blau envoltat d'una trama complexa de branques. Aquest "soroll d'alta freqüència" sol trencar la continuïtat de la segmentació.
+
+
+\subsubsection{Cas 4: Senyals de Prohibició Estàndard}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{no_soroll.png}
+    \caption{Senyal de prohibició acústica.}
+    \label{fig:no_horn}
+\end{figure}
+
+\section{ Descripciots i caracteristiques utilitzades}
+
+\section{Preparació de l'Experimentació}
+
+Abans de procedir a l'entrenament dels models i a la validació amb imatges individuals, és necessari realitzar un pre-processament final de les dades per garantir la convergència dels algorismes i la reproductibilitat dels resultats.
+
+\subsection{Normalització de Dades (Z-Score)}
+
+El vector de característiques construït conté variables amb magnituds molt dispars. Per exemple, la \textit{Compacitat} pot tenir valors al voltant de 15-20, mentre que els descriptors HOG solen oscil·lar entre 0 i 1. Si s'introduïssin aquestes dades directament en un classificador basat en distàncies (com SVM o KNN), les variables amb magnituds més grans dominarien la decisió, eclipsant la informació de textura.
+
+Per solucionar-ho, s'aplica una normalització \textbf{Z-Score} (estandardització) a cada columna del vector de característiques:
+
+\begin{equation}
+    x' = \frac{x - \mu}{\sigma}
+\end{equation}
+
+On $x$ és el valor original, $\mu$ és la mitjana de la característica en tot el dataset d'entrenament i $\sigma$ és la desviació estàndard. Això centra les dades al voltant de 0 amb una desviació unitari.
+
+\subsection{Persistència dels Paràmetres per a Inferència}
+
+Un error comú en sistemes de visió per computador és normalitzar les imatges de test utilitzant les estadístiques de la pròpia imatge de test. Això és incorrecte, ja que el model espera que les dades estiguin en la mateixa escala relativa que les dades d'entrenament.
+
+Per assegurar una inferència correcta en els tests individuals (fase de \textit{Testing}), s'ha implementat un mecanisme de persistència que guarda els següents paràmetres generats durant la fase d'entrenament en un fitxer \texttt{Dades\_Model.mat}:
+
+\begin{itemize}
+    \item \textbf{Vector de Mitjanes ($\mu$):} Per centrar les noves mostres.
+    \item \textbf{Vector de Desviacions Estàndard ($\sigma$):} Per escalar les noves mostres.
+    \item \textbf{Matriu de Coeficients PCA:} La matriu de transformació calculada sobre el HOG d'entrenament, necessària per projectar les característiques de les noves imatges al mateix espai latent de 150 dimensions.
+\end{itemize}
+
+D'aquesta manera, l'script de validació individual carrega aquesta "recepta" i aplica exactament les mateixes transformacions matemàtiques a les noves imatges, garantint la validesa de la predicció.
+
+\section{Experimentació i Resultats}
+
+En aquesta fase del projecte, hem sotmès el sistema a diverses proves per validar la robustesa dels descriptors dissenyats i seleccionar el millor classificador. L'objectiu principal és quantificar la precisió (\textit{Accuracy}) del model i entendre quina informació visual (forma, textura o color) és més determinant per a la identificació correcta dels senyals de trànsit.
+
+A continuació, detallem els experiments realitzats utilitzant l'eina \textit{Classification Learner} i la validació amb imatges reals.
+
+\subsection{Experiment 1: Importància dels Descriptors (Ablation Study)}
+
+Aquest primer experiment té com a objectiu aïllar i avaluar l'impacte real del color en la classificació. Hem entrenat models en dos escenaris diferents per determinar si la identitat del senyal recau més en la seva estructura o en la seva cromàtica.
+
+\subsubsection{Configuració de l'Experiment}
+S'han comparat dos vectors de característiques utilitzant els mateixos conjunts d'entrenament i validació:
+\begin{itemize}
+    \item \textbf{Escenari A (Estructural):} S'utilitzen 154 variables que inclouen només la Geometria i la Textura (HOG + PCA). S'elimina totalment la informació de color.
+    \item \textbf{Escenari B (Complet):} S'utilitzen les 157 variables totals, afegint-hi els descriptors de Color (HOC) a l'Escenari A.
+\end{itemize}
+
+\subsubsection{Resultats i Discussió}
+Els resultats obtinguts amb els models de millor rendiment (SVM Quadràtic i Lineal) són els següents:
+
+\begin{itemize}
+    \item \textbf{Sense Color (Escenari A):} Hem assolit una precisió del \textbf{96.9\%}.
+    \item \textbf{Amb Color (Escenari B):} Hem assolit una precisió del \textbf{97.1\%}.
+\end{itemize}
+
+Aquestes dades demostren que la informació estructural (la silueta del senyal i el "dibuix" intern capturat pel HOG) és el factor discriminador dominant. El sistema és capaç d'identificar els senyals gairebé perfectament en blanc i negre. La incorporació del color aporta una millora marginal del \textbf{+0.2\%}, actuant com un mecanisme de refinament final per resoldre ambigüitats puntuals, però confirmant que el sistema és robust davant variacions d'il·luminació o desgast del color.
+
+
+\end{document}
+

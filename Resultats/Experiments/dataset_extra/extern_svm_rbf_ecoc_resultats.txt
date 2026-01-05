@@ -1,0 +1,56 @@
+resultats extern (svm_rbf_ecoc)
+data: 2026-01-05 17:16:01
+mostres (tot): 24
+mostres (valides): 24
+eliminades per segmentacio: 0
+
+accuracy: 0.7500
+error rate: 0.2500
+total cost (num errors): 6
+balanced accuracy: 0.7727
+macro f1: 0.7216
+prediction time (s): 0.3206
+prediction speed (aprox): 74.9 obs/sec
+
+classes (ordre):
+d_obligatoria, d_prohibida, limit, no_aparcar, no_girar, no_senyal, no_soroll, stop, vianant, zona_bici, zona_cotxe
+
+confusion matrix (rows=true, cols=pred):
+2	0	0	0	0	0	0	0	0	0	0
+0	2	0	0	0	0	0	0	0	0	0
+0	0	2	0	0	0	0	0	0	0	0
+0	0	0	2	0	0	0	0	0	0	0
+0	0	0	0	2	0	0	0	0	0	0
+0	0	0	0	0	2	0	0	0	0	0
+0	0	0	1	0	1	1	0	0	0	0
+0	0	0	0	0	1	0	2	0	0	0
+0	0	0	0	0	0	0	0	2	0	0
+0	0	0	0	0	1	0	0	0	1	0
+1	0	1	0	0	0	0	0	0	0	0
+
+confusion matrix normalitzada per fila (%):
+100	0	0	0	0	0	0	0	0	0	0
+0	100	0	0	0	0	0	0	0	0	0
+0	0	100	0	0	0	0	0	0	0	0
+0	0	0	100	0	0	0	0	0	0	0
+0	0	0	0	100	0	0	0	0	0	0
+0	0	0	0	0	100	0	0	0	0	0
+0	0	0	33.3	0	33.3	33.3	0	0	0	0
+0	0	0	0	0	33.3	0	66.7	0	0	0
+0	0	0	0	0	0	0	0	100	0	0
+0	0	0	0	0	50	0	0	0	50	0
+50	0	50	0	0	0	0	0	0	0	0
+
+per class metrics:
+classe	recall	precision	f1
+d_obligatoria	1.0000	0.6667	0.8000
+d_prohibida	1.0000	1.0000	1.0000
+limit	1.0000	0.6667	0.8000
+no_aparcar	1.0000	0.6667	0.8000
+no_girar	1.0000	1.0000	1.0000
+no_senyal	1.0000	0.4000	0.5714
+no_soroll	0.3333	1.0000	0.5000
+stop	0.6667	1.0000	0.8000
+vianant	1.0000	1.0000	1.0000
+zona_bici	0.5000	1.0000	0.6667
+zona_cotxe	0.0000	0.0000	0.0000

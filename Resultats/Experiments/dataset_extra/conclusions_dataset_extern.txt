@@ -1,0 +1,111 @@
+CONCLUSIONS (DATASET EXTERN) – 2026-01-05
+
+Context
+- Dataset extern: 24 imatges, 11 classes (ordre: d_obligatoria, d_prohibida, limit, no_aparcar, no_girar, no_senyal, no_soroll, stop, vianant, zona_bici, zona_cotxe).
+- Segmentació: 0 imatges eliminades per fallada (és a dir, el test extern avalua classificació/fetures, no un problema de "no detecció").
+- Models comparats (finalistes):
+  1) svm_rbf_ecoc_final.mat  -> (output: svm_rbf_ecoc)
+  2) ensemble_bag_final.mat  -> (output: ensemble_bag)
+
+Resum executiu (mètrica global)
+
+1) SVM RBF (ECOC)
+- Accuracy: 0.7500 (18/24 bé)
+- Balanced accuracy: 0.7727
+- Macro-F1: 0.7216
+- Temps predicció: 0.3206 s  (~74.9 obs/s)
+
+2) Ensemble Bagging
+- Accuracy: 0.6667 (16/24 bé)
+- Balanced accuracy: 0.6970
+- Macro-F1: 0.6433
+- Temps predicció: 0.6881 s  (~34.9 obs/s)
+
+Conclusió global: al dataset extern, el model SVM RBF generalitza millor que l’Ensemble en les tres mètriques clau (accuracy, balanced accuracy i macro-F1), i també és ~2x més ràpid en predicció.
+
+Anàlisi d’errors (patrons i classes problemàtiques)
+
+Classes perfectes (recall=1, en tots dos models)
+- d_obligatoria: 1.00 (amb precisió 0.6667)
+- d_prohibida: 1.00
+- limit: 1.00 (bagging té precisió més baixa: 0.40)
+- no_aparcar: 1.00
+- no_senyal: 1.00 (però precisió 0.40: hi ha falsos positius, és a dir, altres classes predites com no_senyal)
+- vianant: 1.00
+
+Classes amb diferències importants entre models
+
+1) stop
+- SVM RBF: recall 0.6667, F1 0.8000
+- Ensemble: recall 0.3333, F1 0.5000
+Patró: l’Ensemble confon massa stop com no_senyal (2 errors a la fila de stop: 2/3 predit com no_senyal).
+Això és crític perquè stop és una classe semànticament important.
+
+2) no_girar
+- SVM RBF: recall 1.0000, F1 1.0000
+- Ensemble: recall 0.5000, F1 0.6667
+Patró: l’Ensemble divideix no_girar en limit/no_girar (fila no_girar: 50% a limit).
+
+3) limit (precisió)
+- SVM RBF: precision 0.6667, F1 0.8000
+- Ensemble: precision 0.4000, F1 0.5714
+Patró: l’Ensemble està atraient falsos positius cap a limit (p.ex. zona_bici predita com limit, i també zona_cotxe contribuint a limit).
+
+Classes problemàtiques en tots dos models
+
+1) zona_cotxe (fracàs total)
+- SVM RBF: recall 0.0000, precision 0.0000, F1 0.0000
+- Ensemble: recall 0.0000, precision 0.0000, F1 0.0000
+Confusions:
+- zona_cotxe -> d_obligatoria (50%)
+- zona_cotxe -> limit (50%)
+Interpretació probable:
+- La classe zona_cotxe al dataset extern pot tenir un aspecte (colors/forma/fons) que el pipeline actual no modela bé amb les features actuals (HSV per colors + forma geomètrica + HOG en ROI 64x64).
+- També pot haver-hi diferència de domini (il·luminació, escala, senyal parcial, perspectiva) i només hi ha 2 mostres per classe (molt soroll estadístic).
+
+2) no_soroll
+- SVM RBF: recall 0.3333, precision 1.0000, F1 0.5000
+- Ensemble: recall 0.3333, precision 1.0000, F1 0.5000
+Confusions (ambdós): la fila de no_soroll es dispersa (1/3 encert, 2/3 errors). En SVM RBF els errors van a no_aparcar i no_senyal; en Ensemble van a no_aparcar i no_senyal també.
+Interpretació probable:
+- Similaritat visual amb altres senyals circulars/prohibició/limit i dependència forta de la component semàntica del pictograma (que HOG a 64x64 pot capturar insuficientment amb canvi de resolució o fons).
+
+3) zona_bici
+- SVM RBF: recall 0.5000, F1 0.6667
+- Ensemble: recall 0.5000, F1 0.6667
+Confusió principal:
+- zona_bici -> no_senyal (SVM) / zona_bici -> limit (Ensemble) segons matriu.
+
+Diagnòstic: per què SVM RBF guanya aquí
+- Les confusions "dures" (stop/no_girar) penalitzen molt el macro-F1 i balanced accuracy.
+- Amb poques mostres, el Bagging tendeix a ser menys estable (i en aquest cas fa errors sistemàtics cap a no_senyal/limit).
+- El SVM RBF sembla separar millor classes amb patrons més fins (stop i no_girar) i no perd tant el recall.
+
+Recomanació final (per entregar)
+- Model recomanat: svm_rbf_ecoc_final.mat
+Justificació:
+  - Millor accuracy: 0.75 vs 0.667
+  - Millor balanced accuracy: 0.773 vs 0.697
+  - Millor macro-F1: 0.722 vs 0.643
+  - Millor comportament en classes clau: stop (recall 0.667 vs 0.333) i no_girar (1.00 vs 0.50)
+  - Més ràpid en inferència.
+
+Limitacions (molt important indicar-ho)
+- N=24 és molt petit: cada error canvia molt les mètriques. Les conclusions són consistents amb les matrius i la debilitat del Bagging en stop/no_girar, però estadísticament és un test petit.
+- zona_cotxe i no_soroll tenen resultats pobres en ambdós models: caldrà millora de dades/feature/model per aquestes classes o revisar si les imatges externes segueixen exactament la mateixa definició de classe.
+
+Millores mínimes (si vols 1-2 accions ràpides)
+1) Dades
+- Afegir més mostres externes/internes de zona_cotxe i no_soroll, i/o augmentar-les amb variacions (rotació lleu, contrast, escala) per robustesa.
+
+2) Feature
+- Afegir una feature de "textura/contorn" més robusta que HOG a 64x64 quan el ROI és petit o hi ha perspectiva:
+  - provar HOG multi-escala (p.ex. 64 i 96) o afegir LBP (Local Binary Patterns) si es vol mantenir pipeline clàssic.
+
+3) Segmentació
+- Tot i que no ha fallat en aquest test (0 eliminades), les confusions de zona_* podrien venir d’un ROI que inclou massa fons. Es pot provar un retall més ajustat a l’àrea màxima (bounding box) i normalitzar millor la mida del símbol.
+
+Fitxers de referència
+- Resultats SVM RBF: extern_svm_rbf_ecoc_resultats.txt
+- Resultats Ensemble: extern_ensemble_bag_resultats.txt
+- Figures: extern_confusion_* i extern_recall_per_class_*
