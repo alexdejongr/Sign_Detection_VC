@@ -93,6 +93,7 @@ for i = 1:numImages
 end
 
 filas_cero = all(Features == 0, 2);
+
 total_ceros = sum(filas_cero);
 disp(['S''han eliminat ', num2str(total_ceros), ' imatges que han fallat.']);
 
@@ -128,6 +129,9 @@ end
 TaulaFinal.Properties.VariableNames = [noms_manuals, noms_pca];
 
 TaulaFinal.Clase = string(Labels);
+
+% guarda la taula amb predictors i etiqueta per experiments
+save('TaulaFinal.mat','TaulaFinal');
 
 % desar paràmetres per reproduir el pipeline a test
 save('Dades_Model.mat', 'mu', 'sigma', 'coeff_pca', 'mu_pca', 'k');
