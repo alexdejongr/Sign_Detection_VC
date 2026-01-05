@@ -24,10 +24,15 @@ end
 % =========================================================================
 % 2. SELECCIÓ D'IMATGE
 % =========================================================================
-[arxiu, ruta] = uigetfile({'*.jpg;*.png;*.bmp', 'Imatges'}, 'Selecciona una imatge');
+[arxiu, ruta] = uigetfile({'*.jpg;*.png;*.bmp','Imatges'}, 'Selecciona una imatge');
 if isequal(arxiu, 0), return; end
 
-im_original = imread(fullfile(ruta, arxiu));
+try
+    im_original = imread(fullfile(ruta, arxiu));
+catch
+    error(['El archivo ', arxiu, ' no es JPG/PNG válido. ' ...
+           'Convierte la imagen a JPEG real.']);
+end
 im = im2uint8(im_original);
 
 tic; % Inici cronometre

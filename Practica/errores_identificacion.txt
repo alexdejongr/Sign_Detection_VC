@@ -1,5 +1,7 @@
 Carpeta	Nom_Imatge
 -----------------------------------
+d_obligatoria	022_0003.png
+d_obligatoria	022_1_0003.png
 d_obligatoria	024_0038.png
 d_obligatoria	024_1_0038.png
 limit	004_0047.png

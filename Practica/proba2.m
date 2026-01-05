@@ -177,7 +177,7 @@ disp('✅ TaulaFinal creada i normalitzada.');
 
 % 4. GUARDAR EL "CERVELL" DEL SISTEMA (.mat)
 % Guardem coeff_pca (per transformar el HOG) i mu/sigma (per normalitzar)
-save('Practica/Dades_Model.mat', 'mu', 'sigma', 'coeff_pca');
+save('Dades_Model.mat', 'mu', 'sigma', 'coeff_pca');
 disp('💾 Arxiu "Dades_Model.mat" guardat. Ara el test individual funcionarà sol.');
 
 function im_masked = segmentar(im)
