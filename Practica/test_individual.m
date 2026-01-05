@@ -1,4 +1,4 @@
-clearvars -except modelo trainedModel; clc; close all;
+        clearvars -except modelo trainedModel; clc; close all;
 
 % carregar paràmetres del pipeline (pca + z-score)
 if exist('Dades_Model.mat', 'file')
@@ -189,8 +189,8 @@ function im_masked = segmentar_universal(im)
     
     for t = 1:length(stats)
         caixa = stats(t).BoundingBox;  
-        w_box = caixa(3); % Canviat nom per evitar conflictes
-        h_box = caixa(4); % Canviat nom per evitar conflictes
+        w_box = caixa(3);
+        h_box = caixa(4);
         aspect_ratio = w_box / max(h_box, eps);
         
         es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);

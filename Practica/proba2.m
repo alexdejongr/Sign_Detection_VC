@@ -8,6 +8,7 @@ imds = imageDatastore(ruta_dataset, ...
 
 numImages = numel(imds.Files);
 
+% 4 Forma + 3 Color + 1764 HOG
 Features = zeros(numImages, 1771);
 Labels = cell(numImages, 1);
 
@@ -20,13 +21,13 @@ disp(['S''han trobat ', num2str(numImages), ' imatges. Processant...']);
 reset(imds); 
 
 for i = 1:numImages
-    % llegir imatge i etiqueta
+    % Llegir imatge i etiqueta
     [im, info] = read(imds);
     im = im2uint8(im);
     
     Labels{i} = info.Label;
     
-    % segmentació
+    % Segmentació
     im_masked = segmentar(im);
     
     im_gray = rgb2gray(im_masked);
@@ -56,7 +57,7 @@ for i = 1:numImages
     rect = blob.BoundingBox;
     im_crop = imcrop(im_masked, rect);
     
-    % color només sobre píxels no negres
+    % Color només sobre píxels no negres
     im_hsv_crop = rgb2hsv(im_crop);
     H_c = im_hsv_crop(:,:,1);
     S_c = im_hsv_crop(:,:,2);
@@ -80,7 +81,7 @@ for i = 1:numImages
     im_resized = imresize(im_crop, [64, 64]);
     hog_vector = extractHOGFeatures(im_resized, 'CellSize', [8 8]);
     
-    % construir vector de features
+    % Construir vector de features
     w_shape = 6;
     w_color = 2;
     w_hog   = 0.3;
@@ -166,8 +167,8 @@ function im_masked = segmentar(im)
     
     for t = 1:length(stats)
         caixa = stats(t).BoundingBox;  
-        w_box = caixa(3); % Canviat nom per evitar conflictes
-        h_box = caixa(4); % Canviat nom per evitar conflictes
+        w_box = caixa(3);
+        h_box = caixa(4);
         aspect_ratio = w_box / max(h_box, eps);
         
         es_proporcionat = (aspect_ratio > 0.4) && (aspect_ratio < 2.2);
