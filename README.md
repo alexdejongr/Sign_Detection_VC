@@ -1,6 +1,6 @@
 # Traffic Sign Detection and Classification System
 
-Computer Vision project focused on detecting and classifying traffic signs using classical image processing and machine learning techniques. The system performs segmentation, feature extraction, dimensionality reduction, and classification to recognize traffic signs under different environmental conditions. :contentReference[oaicite:0]{index=0}
+Computer Vision project focused on detecting and classifying traffic signs using classical image processing and machine learning techniques. The system performs segmentation, feature extraction, dimensionality reduction, and classification to recognize traffic signs under different environmental conditions.
 
 ## Features
 
